@@ -240,7 +240,7 @@ const View3D = (() => {
       // or single posts, each on two floor rails running back from the screen and clamped to the cabinets
       const T = 0.05, back = Math.min(2.2, Math.max(1.4, H * 0.6)), zf = -0.05, zr = -depth - back;
       const z1 = -depth - 0.25, z2 = z1 - 0.6, yb = floor + T, top = floor + groundFrameHeight(s, comp), tall = Math.max(0.3, top - yb);
-      const rungs = Math.max(2, Math.round(tall / 0.45)), arm = Math.min(H * 0.55, top - 0.2);
+      const rungs = Math.max(2, Math.round(tall / 0.45)), arms = groundArmHeights(s, comp);
       const layout = groundLayout(s, C);
       groundFrames(C, colW).forEach((u, j) => {
         const what = layout[j]; if (what !== 'H' && what !== 'P') return;
@@ -252,7 +252,7 @@ const View3D = (() => {
           items.push({ f, lx, ly: yb + tall / 2, lz: z2, sx: T, sy: tall, sz: T });                                                         // back upright
           for (let r = 1; r <= rungs; r++) items.push({ f, lx, ly: yb + tall * r / (rungs + 1), lz: (z1 + z2) / 2, sx: T * 0.9, sy: T * 0.9, sz: z1 - z2 });   // rungs
         }
-        items.push({ f, lx, ly: arm, lz: (z1 - depth) / 2, sx: 0.035, sy: 0.035, sz: -depth - z1 });                                         // arm to the cabinets
+        for (const ya of arms) items.push({ f, lx, ly: ya, lz: (z1 - depth) / 2, sx: 0.035, sy: 0.035, sz: -depth - z1 });                  // arms to the cabinets
       });
     }
     if (!items.length) return;

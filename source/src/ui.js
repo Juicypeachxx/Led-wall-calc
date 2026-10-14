@@ -351,6 +351,8 @@ function groundHtml(s) {
   const g = s.gs || defaultGroundStack();
   return `<div class="row2">${numField('cf-gs-every', 'H-frame every', 'gs.every', g.every, { type: 'int', min: 1, max: 200, step: 1, unit: g.every === 1 ? 'beam' : 'beams' })}
       <label class="fld"><span>Frame height</span><div class="unit-in"><input type="number" id="cf-gs-height" data-bind="gs.height" data-type="numopt" min="0.3" max="30" step="0.1" value="${g.height ?? ''}" placeholder="auto"><i>m</i></div></label></div>
+    <div class="row2">${numField('cf-gs-arms', 'Arms to the screen', 'gs.arms', g.arms ?? 1, { type: 'int', min: 0, max: 10, step: 1, unit: 'each' })}
+      <div class="desc" style="align-self:end;padding-bottom:6px">per H-frame or post, spread evenly up the screen</div></div>
     <label class="chk"><input type="checkbox" data-gs="posts"${g.posts ? ' checked' : ''}> Posts between the H-frames</label>
     <div data-ro="joints"></div>`;
 }
@@ -414,7 +416,8 @@ const RO = {
       : `<b>${{ flown: 'Hanging weight', ground: 'Weight on the base' }[m]} ${fmtKg(c.weight)}</b> · ${fmtInt(k.kgPerM)} kg per metre ${along} · heaviest column ${fmtKg(c.heaviestCol.kg)}${m === 'ground' ? ` (${k.tallest.cabinets} cabinet${k.tallest.cabinets === 1 ? '' : 's'} high)` : ''} · centre of gravity ${fmtM(k.cog, 2)} m above the floor · ${area}`;
     if (m === 'ground') {
       const L = groundLayout(s, c.cols), nH = L.filter((x) => x === 'H').length, nP = L.filter((x) => x === 'P').length;
-      t += `<br>${c.cols} ground beam${c.cols === 1 ? '' : 's'} with adjustable feet · behind: ${nH} H-frame${nH === 1 ? '' : 's'}${nP ? ` and ${nP} post${nP === 1 ? '' : 's'}` : ''}, ${fmtNum(groundFrameHeight(s, c), 2)} m high, on floor rails`;
+      const na = groundArms(s);
+      t += `<br>${c.cols} ground beam${c.cols === 1 ? '' : 's'} with adjustable feet · behind: ${nH} H-frame${nH === 1 ? '' : 's'}${nP ? ` and ${nP} post${nP === 1 ? '' : 's'}` : ''}, ${fmtNum(groundFrameHeight(s, c), 2)} m high, on floor rails · ${na ? `${na} arm${na === 1 ? '' : 's'} each to the screen (${fmtInt((nH + nP) * na)} in all)` : 'not clamped to the screen'}`;
     }
     t += `<br>Build order: ${buildOrderText(m)}.<br><span style="color:var(--ink-3)">Cabinets only: ${m === 'flown' ? 'flying bars, chains' : 'ground beams, H-frames'}, cables and wind add to these. Have the rigging or structure designed and checked by a qualified person.</span>`;
     return t;

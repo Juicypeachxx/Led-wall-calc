@@ -81,8 +81,9 @@ const MOUNT_ORDER = ['flown', 'ground'];
 // beams (0 = left end, cols = right end), stand H-frames: a ladder (two uprights with rungs) on a pair of floor
 // rails running back from the screen, clamped to the cabinets; optionally single posts on the same rails between
 // them. Per screen (s.gs): an H-frame every `every` beams (always at both ends), posts at the joints between
-// or not, the frame height (null = 0.3 m above the screen), and per-joint changes on top ('H', 'P' or '-').
-function defaultGroundStack() { return { every: 1, posts: false, height: null, over: {} }; }
+// or not, the frame height (null = 0.3 m above the screen), how many arms clamp each frame or post to the
+// screen, and per-joint changes on top ('H', 'P' or '-').
+function defaultGroundStack() { return { every: 1, posts: false, height: null, arms: 1, over: {} }; }
 function groundLayout(s, cols) {
   const g = s.gs || defaultGroundStack(), every = clamp(int(g.every, 1), 1, 200), out = [];
   for (let j = 0; j <= cols; j++) out.push(j % every === 0 || j === cols ? 'H' : g.posts ? 'P' : '-');
@@ -93,6 +94,12 @@ function groundLayout(s, cols) {
 function groundFrameHeight(s, comp) {
   const g = s.gs || {};
   return g.height > 0 ? g.height : (num(s.y) + comp.H) / 1000 + 0.3;
+}
+function groundArms(s) { const a = (s.gs || {}).arms; return clamp(int(a === undefined || a === null ? 1 : a, 1), 0, 10); }
+// where the arms meet the screen, metres above its bottom edge: spread evenly over the height the frames reach
+function groundArmHeights(s, comp) {
+  const n = groundArms(s), reach = Math.max(0.2, Math.min(comp.H / 1000, groundFrameHeight(s, comp) - num(s.y) / 1000));
+  return Array.from({ length: n }, (_, i) => reach * (i + 0.5) / n);
 }
 function groundFrames(cols, colW) { return Array.from({ length: cols + 1 }, (_, i) => i * colW); }
 function buildOrderText(mount) {
@@ -213,7 +220,7 @@ function normalizeProject(raw) {
     s.angle = clamp(num(s.angle, 5), 0.5, 45);
     s.holes = Array.isArray(s.holes) ? s.holes.filter((k) => typeof k === 'string' && /^\d+,\d+$/.test(k)).slice(0, 20000) : [];
     const g = s.gs && typeof s.gs === 'object' ? s.gs : {};
-    s.gs = { every: clamp(int(g.every, 1), 1, 200), posts: g.posts === true, height: num(g.height, 0) > 0 ? clamp(num(g.height), 0.3, 30) : null, over: {} };
+    s.gs = { every: clamp(int(g.every, 1), 1, 200), posts: g.posts === true, height: num(g.height, 0) > 0 ? clamp(num(g.height), 0.3, 30) : null, arms: clamp(int(g.arms, 1), 0, 10), over: {} };
     if (g.over && typeof g.over === 'object') for (const [k, v] of Object.entries(g.over)) if (/^\d{1,3}$/.test(k) && (v === 'H' || v === 'P' || v === '-')) s.gs.over[k] = v;
     s.data = Object.assign({ dir: 'h', start: 'bl', path: 'snake', split: 'lines' }, s.data || {});
     if (!['h', 'v'].includes(s.data.dir)) s.data.dir = 'h';
@@ -736,6 +743,8 @@ function packingList(project, comps, plan) {
     const parts = grounds.map(({ s, c }) => { const n = groundLayout(s, c.cols).filter((x) => x === kind).length; return { name: s.name, n, label: `${fmtInt(n)} × ${fmtNum(groundFrameHeight(s, c), 2)} m high` }; }).filter((x) => x.n);
     if (parts.length) items.push({ group: 'Rigging', item, qty: sum(parts, (x) => x.n), parts, note });
   }
+  const armParts = grounds.map(({ s, c }) => { const n = groundLayout(s, c.cols).filter((x) => x !== '-').length * groundArms(s); return { name: s.name, n, label: `${fmtInt(n)} (${groundArms(s)} per frame or post)` }; }).filter((x) => x.n);
+  if (armParts.length) items.push({ group: 'Rigging', item: 'Arm with clamps (from an H-frame or post to the screen)', qty: sum(armParts, (x) => x.n), parts: armParts, note: 'spread evenly up the screen' });
   // power
   if (list.length && list.every(({ c }) => c.power)) {
     add('Power', `Power feed cable, one per ${fmtInt(st.circuitAmps)} A circuit`, per((c) => c.power.circuits.length), 'length to suit the distribution');
@@ -809,5 +818,5 @@ if (typeof module !== 'undefined') {
   module.exports = { BUILTIN_PANELS, KINDS, CONTROLLERS, computeScreen, computeTotals, suggest169, exampleProject, blankProject, normalizeProject,
     ratioInfo, splitLines, orderLines, facetTransforms, colLetter, slug, fmtInt, fmtM, fmtSize, getPanel, defaultScreen, placeNewScreen, holesInGrid, defaultSettings,
     planControllers, assignControllers, packingList, chainLinks, MOUNTS, MOUNT_ORDER, buildOrderText, packQty, packPart,
-    normalizePanel, panelName, panelKey, panelIdFor, samePanel, sheetField, sheetNum, panelsFromTable, findPanel, KIND_ORDER, groundFrames, groundLayout, groundFrameHeight, defaultGroundStack };
+    normalizePanel, panelName, panelKey, panelIdFor, samePanel, sheetField, sheetNum, panelsFromTable, findPanel, KIND_ORDER, groundFrames, groundLayout, groundFrameHeight, defaultGroundStack, groundArms, groundArmHeights };
 }
