@@ -69,15 +69,17 @@ final class Db {
   public function __construct(array $cfg) {
     $host = (string)($cfg['db_host'] ?? '127.0.0.1'); $port = (int)($cfg['db_port'] ?? 3307);
     $name = (string)($cfg['db_name'] ?? 'led_planner'); $user = (string)($cfg['db_user'] ?? ''); $pass = (string)($cfg['db_pass'] ?? '');
+    $socket = trim((string)($cfg['db_socket'] ?? ''));   // a socket file instead of host and port, when the site connects that way
     $driver = (string)($cfg['db_driver'] ?? 'auto');
     if ($driver === 'auto') $driver = extension_loaded('pdo_mysql') ? 'pdo' : (extension_loaded('mysqli') ? 'mysqli' : '');
     if ($driver === 'pdo') {
-      $this->pdo = new PDO("mysql:host=$host;port=$port;dbname=$name;charset=utf8mb4", $user, $pass, [
+      $where = $socket !== '' ? "unix_socket=$socket" : "host=$host;port=$port";
+      $this->pdo = new PDO("mysql:$where;dbname=$name;charset=utf8mb4", $user, $pass, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false,
       ]);
     } elseif ($driver === 'mysqli') {
       mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-      $this->my = new mysqli($host, $user, $pass, $name, $port);
+      $this->my = $socket !== '' ? new mysqli('localhost', $user, $pass, $name, 0, $socket) : new mysqli($host, $user, $pass, $name, $port);
       $this->my->set_charset('utf8mb4');
     } else {
       fail(500, 'setup', 'This PHP has no MariaDB driver. Turn on the extension pdo_mysql (or mysqli) in the PHP of this site.');
@@ -113,9 +115,10 @@ function db(array $cfg): Db {
   } catch (Throwable $e) {
     $code = (int)$e->getCode();
     $hint = [1045 => 'the user name or password is wrong, or this user may not connect from here', 1044 => 'the user may not use this database', 1049 => 'the database does not exist',
-      2002 => 'no database server answers at that host and port', 2005 => 'the host name is unknown'][$code] ?? 'see the PHP error log';
+      1130 => 'MariaDB lets no user connect from this address; give the user the host Any host (%)',
+      2002 => 'no database server answers at that host and port, or socket', 2005 => 'the host name is unknown'][$code] ?? 'see the PHP error log';
     error_log('LED Wall Planner API: database connection failed: ' . $e->getMessage());
-    fail(500, 'db', "Could not connect to the database ($hint). Check db_host, db_port, db_name, db_user and db_pass in api/config.php.");
+    fail(500, 'db', "Could not connect to the database ($hint). Check db_host, db_port (or db_socket), db_name, db_user and db_pass in api/config.php.");
   }
   install($db);
   return $db;

@@ -49,7 +49,7 @@ Projects save automatically in the browser you use, on that device, as soon as y
 
 ### On your own server
 
-The planner can also run on your own server, such as a Synology NAS, and keep projects and your panels in a MariaDB database. Everyone who signs in with the planner's shared password then sees the same projects, on any device. [NAS.md](NAS.md) walks through the setup: a database in phpMyAdmin, two files in File Station, and a settings file.
+The planner can also run on your own server, such as a Synology NAS, and keep projects and your panels in a MariaDB database. Everyone who signs in with the planner's shared password then sees the same projects, on any device. [NAS.md](NAS.md) walks through the setup: the files in File Station, a settings file, and a database in phpMyAdmin.
 
 ## Keep in mind
 
