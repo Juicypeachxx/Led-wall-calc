@@ -1,0 +1,2 @@
+# the real settings of a server copy hold passwords: they stay on the server (see NAS.md)
+server/api/config.php

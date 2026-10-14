@@ -47,6 +47,10 @@ This repository is public, so anyone can download `panels.xlsx`. Leave stock num
 
 Projects save automatically in the browser you use, on that device, as soon as you change something, and the planner reopens the last project you worked on. To move a project to another device or send it to someone, use **Export › Project file** and then **Import** on the other side.
 
+### On your own server
+
+The planner can also run on your own server, such as a Synology NAS, and keep projects and your panels in a MariaDB database. Everyone who signs in with the planner's shared password then sees the same projects, on any device. [NAS.md](NAS.md) walks through the setup: a database in phpMyAdmin, two files in File Station, and a settings file.
+
 ## Keep in mind
 
 - Weight and power of the generic cabinets are typical values, not a specific product. For exact figures use your own panels with their datasheet values.
@@ -60,6 +64,8 @@ Projects save automatically in the browser you use, on that device, as soon as y
 ## Changing the planner
 
 The app code is in `source/src`. After changing it, run `python3 source/build.py`, which rebuilds `index.html` with the libraries and fonts from `source/vendor` embedded.
+
+The server part is `server/api/index.php` (PHP 7.4 or later, with pdo_mysql or mysqli); it makes its MariaDB tables itself. `NAS.md` describes the setup.
 
 Text the planner shows is written in English inside `tr()` (or `trn()` for counts), and its Slovenian is in `source/src/lang-sl.js`. When you add or change text, add the Slovenian there too, then run `node source/check-lang.js`, which lists any text without a translation.
 

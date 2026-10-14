@@ -1,8 +1,40 @@
 /* ============================================================
-   STORAGE — saved projects. Each signed-in viewer's projects live in
-   their private db subtree (data/users/<id>/<projectId>); a copy is
-   also kept in this browser so the page works offline or signed out.
+   STORAGE — saved projects. On the planner's own server (api/ next to
+   index.html, see NAS.md) they live in its MariaDB database, shared by
+   everyone who signs in with the planner password. In Claude, each
+   signed-in viewer's projects live in their private db subtree
+   (data/users/<id>/<projectId>). A copy is always kept in this browser
+   so the page works offline or signed out.
    ============================================================ */
+
+/* the planner's own server: the same document calls as the artifact database, over its PHP API */
+const Server = (() => {
+  async function call(a, { query = {}, body } = {}) {
+    const res = await fetch(`api/index.php?${new URLSearchParams(Object.assign({ a }, query))}`, {
+      method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: Object.assign({ 'X-LED-Planner': '1' }, body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* not the planner's API */ }
+    if (!data || data.planner !== 'led') throw Object.assign(new Error('no planner server here'), { code: 'absent' });
+    if (!data.ok) throw Object.assign(new Error(data.message || data.error), { code: data.error, status: res.status });
+    return data;
+  }
+  const db = {
+    collection() {
+      return {
+        doc: (id) => ({
+          async get() { const r = await call('get', { query: { id } }); return { exists: !!r.exists, data: () => r.doc }; },
+          set: (doc) => call('set', { body: { id, doc } }),
+          delete: () => call('del', { body: { id } }),
+        }),
+        where: () => ({ async get() { const r = await call('list'); return { docs: r.docs.map((d) => ({ id: d.id, data: () => d.data })) }; } }),
+      };
+    },
+  };
+  return { call, db };
+})();
 
 const Store = (() => {
   const LS = {
@@ -11,6 +43,9 @@ const Store = (() => {
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } },
   };
   let db = null, uid = null, cloudOK = false, localOK = false;
+  let where = '';            // 'server' (the planner's own) or 'claude' (the artifact database), once found
+  let needsLogin = false;    // the server is there, and this browser has not signed in
+  let serverError = '';      // the server is there but not set up (its message)
   const chains = new Map();
   const listeners = new Set();
   let state = 'idle';   // idle | saving | saved | local | error | off
@@ -39,16 +74,40 @@ const Store = (() => {
   function localLoad(id) { try { const r = LS.get('lwp:proj:' + id); return r ? normalizeProject(JSON.parse(r)) : null; } catch (e) { return null; } }
   function localRemove(id) { LS.del('lwp:proj:' + id); LS.set('lwp:index', JSON.stringify(localIndex().filter((x) => x.id !== id))); }
 
-  /* ---- cloud ---- */
+  /* ---- cloud: the planner's own server, else the artifact database ---- */
   async function initCloud() {
     probeLocal();
-    if (!(window.claude && typeof window.claude.use === 'function')) { emit(); return false; }
+    if (await initServer()) { emit(); return true; }
+    if (where === 'server' || !(window.claude && typeof window.claude.use === 'function')) { emit(); return false; }
     try {
       const [d, u] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
-      if (d && u) { const id = await u.id(); if (id) { db = d; uid = id; cloudOK = true; } }
+      if (d && u) { const id = await u.id(); if (id) { db = d; uid = id; cloudOK = true; where = 'claude'; } }
     } catch (e) { cloudOK = false; }
     emit();
     return cloudOK;
+  }
+  function useServer() { db = Server.db; uid = 'shared'; cloudOK = true; needsLogin = false; serverError = ''; where = 'server'; }
+  async function initServer() {
+    if (!/^https?:$/.test(location.protocol)) return false;
+    try {
+      const r = await Server.call('me');
+      where = 'server';
+      if (!r.signedIn) { needsLogin = true; return false; }
+      useServer(); return true;
+    } catch (e) {
+      if (e.code === 'absent') return false;
+      where = 'server'; serverError = e.message || 'error'; return false;
+    }
+  }
+  // the shared password; throws with the server's answer (code: password, locked, setup, db)
+  async function login(password) {
+    await Server.call('login', { body: { password } });
+    useServer(); emit();
+    return true;
+  }
+  async function logout() {
+    try { await Server.call('logout', { body: {} }); } catch (e) { /* signed out here anyway */ }
+    cloudOK = false; needsLogin = true; emit();
   }
   const col = () => db.collection('data/users/' + uid);
   function failCloud(e) {
@@ -56,6 +115,8 @@ const Store = (() => {
     if (code === 'invalid_argument' || code === 'revoked' || code === 'not_granted' || code === 'capability_disabled' || code === 'capability_removed') {
       cloudOK = false; setState(localOK ? 'local' : 'off', ''); return;
     }
+    // the server's sign-in ran out (after 30 days, or a new password): keep working in this browser, ask to sign in again
+    if (code === 'login') { cloudOK = false; needsLogin = true; setState(localOK ? 'local' : 'off', ''); return; }
     if (code === 'quota_exceeded') { setState('error', tr('Your saved projects are full. Delete a few in Open, then try again.')); return; }
     setState('error', tr('Could not save just now. It will try again on your next change.'));
   }
@@ -101,13 +162,14 @@ const Store = (() => {
     chains.delete(id);
   }
 
+  // the last project opened stays per browser on a shared server: one person opening a project does not move everyone else
   async function setLast(id) {
     LS.set('lwp:last', id);
-    if (!cloudOK) return;
+    if (!cloudOK || where === 'server') return;
     try { await col().doc('_settings').set({ kind: 'settings', last: id }); } catch (e) { /* not important */ }
   }
   async function cloudLast() {
-    if (!cloudOK) return null;
+    if (!cloudOK || where === 'server') return null;
     try { const d = await col().doc('_settings').get(); return d.exists ? ((d.data() || {}).last || null) : null; } catch (e) { return null; }
   }
   async function loadCloud(id) {
@@ -144,7 +206,11 @@ const Store = (() => {
   }
   const flag = (k, v) => (v === undefined ? LS.get('lwp:flag:' + k) === '1' : LS.set('lwp:flag:' + k, v ? '1' : '0'));
 
-  return { initCloud, save, list, load, loadCloud, remove, setLast, cloudLast, localLast, localLoad, probeLocal,
+  // projects booked for any day from..to (server only): their summaries with the project inside
+  async function booked(from, to) { const r = await Server.call('booked', { query: { from, to } }); return r.docs.map((d) => d.data); }
+
+  return { initCloud, login, logout, booked, save, list, load, loadCloud, remove, setLast, cloudLast, localLast, localLoad, probeLocal,
+    get where() { return where; }, get needsLogin() { return needsLogin; }, get serverError() { return serverError; },
     localLibrary, saveLibrary, cloudLibrary, siteCache, saveSiteCache, localCatalogs, flag,
     mode, onChange: (f) => { listeners.add(f); f(state, mode(), lastError); }, get state() { return state; } };
 })();

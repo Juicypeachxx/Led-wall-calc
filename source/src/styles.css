@@ -99,6 +99,7 @@ textarea { min-height: 70px; resize: vertical; }
 .modal .chk input { flex: none; margin-top: 1px; }
 
 .save-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); padding: 0 2px 8px; white-space: nowrap; }
+.save-pill.act { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .save-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
 .save-pill[data-s="saved"]::before { background: var(--ok); }
 .save-pill[data-s="local"]::before { background: var(--accent); }

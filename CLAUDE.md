@@ -10,6 +10,7 @@ Claude Code reads this file at the start of every session. It says how the proje
 - **Every visible text is translated.** Write it in English inside `tr('…')` (`trn(n, '{n} cabinet', '{n} cabinets')` for counts, `trc('context', '…')` when one word needs another translation in one place), with `{name}` placeholders instead of pasted-in values, and add the Slovenian to `source/src/lang-sl.js` in the same change. Format numbers with `fmtInt`, `fmtNum`, `fmtDec`, `fmtPct` and dates with `fmtDate`, never `toFixed` or `toLocaleString` alone, so Slovenian gets decimal commas (1.026,5). `node source/check-lang.js` must pass. The language core is at the top of `engine.js`.
 - **Keep old project files opening.** `normalizeProject` in `engine.js` upgrades old files and fills in defaults; give every new project or screen field a default there.
 - **The repository is public** (the README says so): no private data, stock lists or contact details in it.
+- **The planner also runs on the owner's Synology NAS** (NAS.md), at https://stevecur.ddns.net/led/, beside their own PHP time tracking site "timebox" (which runs in a Web Station container; don't touch it). There `server/api/index.php` keeps projects, your panels and settings in MariaDB (database `led_planner`), behind one shared password. The planner finds it as `api/index.php` next to `index.html`; anywhere else (GitHub Pages, a file) it works from browser storage as before. Keep the API PHP 7.4 compatible, working with both pdo_mysql and mysqli, and never commit `server/api/config.php` (it is in `.gitignore`). The owner updates the NAS by hand: tell them when `index.html` or `server/api/index.php` changed.
 - **The same code also runs as a claude.ai artifact.** When `window.claude` exists, projects are saved per signed-in user in the artifact database and exports go through its downloads capability (`storage.js`, end of `ui.js`). Keep both paths working.
 - Style: short, plain wording for people who build screens, British spelling (metres, colour), `·` between facts in readouts. Commit messages: a short title, then bullets on what changed for the user.
 - Slovenian words used throughout: cabinet = panel, screen = zaslon, data port = podatkovni izhod, controller = krmilnik, power circuit = tokokrog, flown = obešen, ground stack = stoječ, ground beam = talni nosilec, H-frame = H-okvir, post = steber, packing list = seznam opreme. Plurals have four forms (1, 2, 3–4, 5+); where a number would change the words around it, Slovenian uses "label: number" (e.g. `izhodi v uporabi: glavni 7, rezervni 7`).
@@ -21,6 +22,9 @@ Claude Code reads this file at the start of every session. It says how the proje
 | `index.html` | The whole app in one file, built from `source/`; the site serves it |
 | `source/build.py` | Builds `index.html` from `source/src` and `source/vendor` |
 | `source/check-lang.js` | Checks that every text has its Slovenian, with the same placeholders and four plural forms |
+| `server/api/index.php` | The planner's own server: sign-in, and projects, your panels and settings in MariaDB (tables `led_*`, made on first use) |
+| `server/api/config.sample.php` | Template for the server's `config.php` (shared password, database) |
+| `NAS.md` | Setting the planner up on the owner's Synology NAS |
 | `source/src/engine.js` | Language core (`tr`, `trn`, `trc`, number formats), project model, panel catalogue, upgrading old files, all calculations (size, curves, data, power, controller, mounting); no DOM |
 | `source/src/lang-sl.js` | Slovenian for every text, keyed by the English |
 | `source/src/ui.js` | App state, undo, cards, dialogs, events, exports, start-up |
@@ -41,18 +45,18 @@ Claude Code reads this file at the start of every session. It says how the proje
 1. `python3 source/build.py`, then `git status`: only the files you meant to change, plus `index.html`. Then `node source/check-lang.js`.
 2. Open `index.html` in headless Chromium with Playwright. In the cloud container it is preinstalled (`require('/opt/node-tools/node_modules/playwright')`; don't run `playwright install`). Watch for page errors, open the example project (`#btn-example`), try the change, and run every export (`#btn-export`, then `[data-exp="pdf"]`, `layout`, `plan`, `pixmap`, `packing`, `cabinets`, `json`). Warnings about software WebGL come from headless Chromium, not from the app.
 3. At phone width (390 px) the page must not scroll sideways.
-4. Try it in Slovenian too: Settings › Language, or a browser context with `locale: 'sl-SI'`. After using the change, `window.__lwp.TR_MISSING` (texts asked for with no Slovenian) must be empty. `pdftotext` is installed for reading the PDF report's text.
+4. When `server/` or `storage.js` changed: test against a real MariaDB. In the cloud container `apt-get update && apt-get install -y mariadb-server` works; start it with `mariadbd --user=mysql &` (after `mkdir -p /run/mysqld && chown mysql /run/mysqld`), make `led_planner` and its user as NAS.md says, put `index.html` and `server/api` (with a `config.php`) into a folder `led/`, and serve its parent with `php -S 127.0.0.1:8099`. Then sign in from two browser contexts and check that a project saved in one shows up in the other.
+5. Try it in Slovenian too: Settings › Language, or a browser context with `locale: 'sl-SI'`. After using the change, `window.__lwp.TR_MISSING` (texts asked for with no Slovenian) must be empty. `pdftotext` is installed for reading the PDF report's text.
 
 ## Where we left off
 
 Updated 2026-10-14, session 2.
 
 - The planner is in English and Slovenian, switched in Settings › Language (see the session log). Both languages are checked: no text without a translation, all seven exports, phone width, and English output byte for byte as before.
-- **Next, asked by the owner: a warehouse.** A section listing the materials in stock, screens/panels and other equipment ("stuff"), filled by importing their Excel file, based on `panels-template.xlsx`. The planner should use it to show whether a project has enough of everything and how much is left for the next projects. It builds on the panels' Stock field and the panel import that exist now. Questions to settle with the owner before building:
-  - Which items besides panels: controllers, cables, ground beams, H-frames, posts, arms, flying bars, hoists, anything else? One row per item type with a quantity?
-  - "Left for next projects": do projects reserve stock by their dates (set-up to teardown, so overlapping jobs share it), or all projects at once?
-  - Where the list lives: `panels.xlsx` on the site (public repo, so stock is visible to anyone), or imported into the browser or account (private)?
-  - Should the packing list items match warehouse items by name?
+- **Server mode is built and tested** (PHP 8.3 with MariaDB 10.11 here, both drivers, two devices), but **the owner still has to install it** on the NAS with NAS.md. Ask how that went; if something failed, the planner shows the server's message (config, database host and port, driver).
+- **Next, asked by the owner: a warehouse.** A section listing the materials in stock, screens/panels and other equipment ("stuff"), filled by importing their Excel file, based on `panels-template.xlsx`. The planner should use it to show whether a project has enough of everything and how much is left for the next projects. It builds on the panels' Stock field and the panel import that exist now.
+  - The owner's answers (session 2): track panels and screen versions, cases (how many panels each holds), controllers, ground stack and rigging, cables; reserve **by dates** (booking dates per project, from equipment out to back, day by day against the other booked projects); keep it all in **MariaDB on the NAS**: the warehouse list is imported from their Excel file (based on `panels-template.xlsx`) into the database through the planner. Projects then need real booking date fields in Settings, and the server's `booked` request already returns the projects booked in a period.
+  - Plan from session 2: one row per item type with a Category column (panel, case, controller, ground beam, H-frame, post, arm, flying bar, data cable, power cable, other); panel rows carry the panel specs so they also feed the panel lists; cases name the panel they hold and how many; cables and flying bars a length, H-frames and posts a height, ground beams a width. The planner compares a project's needs (from the packing list calculations) with what is left after the other projects booked on the same days, shows a Warehouse section, and a status line in the project.
 - **Open question for the owner:** switching an existing screen to Ground stack in the Mounting card keeps its bottom height (the example's main screen stays 1 m up); only new ground-stack screens start on the floor. With a height above 0, the ground beams and feet are drawn under the screen, but the H-frames and posts stand on the floor at 0 and their automatic height counts from the floor (5.3 m for the 4 m main screen). Should switching drop the screen to the floor, or does a height mean a stage deck, with the frames standing on the deck too?
 
 ## Session log
@@ -69,6 +73,7 @@ Newest first: what the owner asked, the commits, decisions, and anything left op
   - The gear button and its dialog are now "Settings", with Language at the top.
   - Legend columns under the plan now size to their longest entry: the power legend's text ran into the next column, in English too.
   - `source/check-lang.js` added for keeping the translations complete.
+- The owner asked to move the planner onto their Synology NAS with their MariaDB, beside their time tracking site (PHP files in the `web` share, a Web Station container, phpMyAdmin), with a separate shared password and a new database. Added `server/api/index.php`, `config.sample.php`, `NAS.md`, sign-in in the planner (Settings › Server, the save line), and Slovenian for it. The warehouse waits on top of this.
 
 ### Session 1 · 2026-10-13 to 2026-10-14
 

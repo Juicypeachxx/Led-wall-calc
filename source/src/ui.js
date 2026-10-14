@@ -95,13 +95,14 @@ function applyMode() {
 const SHELL_EN = new WeakMap();
 const SHELL_LIVE = new Set(['save-pill', 'screen-tabs', 'screen-props', 'cfg', 'results', 'plan-title', 'plan-legend', 'export-menu', 'add-menu', 'empty-kinds', 'start-fields', 'view3d', 'modal-root', 'toasts']);
 function translateShell(el) {
-  const orig = SHELL_EN.get(el) || {};
-  for (const a of ['title', 'aria-label', 'placeholder']) {
-    if (!el.hasAttribute(a)) continue;
-    if (!(a in orig)) orig[a] = el.getAttribute(a);
-    el.setAttribute(a, tr(orig[a]));
+  let orig = SHELL_EN.get(el);
+  if (!orig) {
+    // the first time, before the app has touched it: the labels the page shell itself has (later ones are the app's)
+    orig = {};
+    for (const a of ['title', 'aria-label', 'placeholder']) if ((el.getAttribute(a) || '').trim()) orig[a] = el.getAttribute(a);
+    SHELL_EN.set(el, orig);
   }
-  SHELL_EN.set(el, orig);
+  for (const a in orig) el.setAttribute(a, tr(orig[a]));
   // drawings, code and the parts the app fills in itself keep their own label only
   if (el.namespaceURI !== 'http://www.w3.org/1999/xhtml' || SHELL_LIVE.has(el.id) || /^(SCRIPT|STYLE|TEMPLATE|TEXTAREA)$/.test(el.tagName)) return;
   for (const n of el.childNodes) {
@@ -196,17 +197,28 @@ async function saveNow() {
 async function flushSave() { if (!S.pristine) await saveNow(); }
 function updateSavePill() {
   const el = $('#save-pill'); if (!el) return;
-  const st = Store.state, mode = Store.mode();
+  const st = Store.state, mode = Store.mode(), server = Store.where === 'server';
+  // on the planner's own server, but not signed in (or the server is not set up): work stays in this browser, and the pill says so
+  const out = server && mode !== 'cloud' ? (Store.serverError ? tr('Server not ready: saved in this browser only') : tr('Not signed in: saved in this browser only')) : '';
   let s = st, txt;
-  if (S.project && S.project.example && S.pristine) { s = 'idle'; txt = tr('Example project. Your changes save automatically'); }
-  else if (S.project && S.fresh && S.pristine && st !== 'error' && st !== 'off') { s = 'idle'; txt = mode === 'cloud' ? tr('Saves to your account as soon as you change something') : mode === 'local' ? tr('Saves in this browser as soon as you change something') : tr('Not saved'); }
+  if (out) { s = 'error'; txt = out; }
+  else if (S.project && S.project.example && S.pristine) { s = 'idle'; txt = tr('Example project. Your changes save automatically'); }
+  else if (S.project && S.fresh && S.pristine && st !== 'error' && st !== 'off') { s = 'idle'; txt = mode === 'cloud' ? (server ? tr('Saves on the server as soon as you change something') : tr('Saves to your account as soon as you change something')) : mode === 'local' ? tr('Saves in this browser as soon as you change something') : tr('Not saved'); }
   else if (st === 'saving') txt = tr('Saving…');
-  else if (st === 'saved') txt = tr('Saved to your account');
+  else if (st === 'saved') txt = server ? tr('Saved on the server') : tr('Saved to your account');
   else if (st === 'local') txt = mode === 'cloud' ? tr('Saved') : tr('Saved in this browser');
   else if (st === 'error') txt = tr('Not saved yet, retrying on next change');
   else if (st === 'off') txt = tr('Not saved: storage is blocked. Use Export › Project file');
-  else txt = mode === 'cloud' ? tr('Saves to your account') : mode === 'local' ? tr('Saves in this browser') : tr('Not saved');
+  else txt = mode === 'cloud' ? (server ? tr('Saves on the server') : tr('Saves to your account')) : mode === 'local' ? tr('Saves in this browser') : tr('Not saved');
   el.dataset.s = s; el.textContent = txt;
+  el.classList.toggle('act', !!out);
+  if (out) el.title = Store.serverError || tr('Sign in'); else el.removeAttribute('title');
+}
+// the pill signs in when the server waits for it, or shows what the server needs
+function savePillClick() {
+  if (Store.where !== 'server' || Store.mode() === 'cloud') return;
+  if (Store.serverError) toast(tr('The server is not set up yet: {why}', { why: Store.serverError }));
+  else loginModal(afterSignIn);
 }
 
 /* ---------- rendering ---------- */
@@ -952,6 +964,7 @@ function bindAll() {
   $('#btn-import').onclick = () => $('#file-import').click();
   $('#file-import').addEventListener('change', importFile);
   $('#btn-settings').onclick = settingsModal;
+  $('#save-pill').addEventListener('click', savePillClick);
   $('#btn-export').onclick = (e) => { e.stopPropagation(); renderExportMenu(); toggleMenu(e.currentTarget, $('#export-menu')); };
   $('#export-menu').addEventListener('click', (e) => { const b = e.target.closest('[data-exp]'); if (!b || b.disabled) return; closeMenus(); runExport(b.dataset.exp); });
   $('#btn-add').onclick = (e) => { e.stopPropagation(); renderAddMenu(); toggleMenu(e.currentTarget, $('#add-menu')); };
@@ -1101,7 +1114,9 @@ async function openProjectsModal() {
     m.body.innerHTML = `<div class="empty">${mode === 'none' ? tr('No saved projects yet. Projects save automatically once you change something, but this browser is blocking storage, so use Export › Project file to keep your work. You can also Import a project file.') : tr('No saved projects yet. Projects save automatically once you change something. You can also Import a project file.')}</div>${exampleLink}`;
     return;
   }
-  m.body.innerHTML = `<div class="desc">${mode === 'cloud' ? tr('Projects saved to your account. They follow you to any device where you open this planner.') : tr('Projects saved in this browser.')}</div>
+  const signIn = Store.where === 'server' && mode !== 'cloud' && !Store.serverError ? ` <button class="linkbtn" data-signin>${tr('Sign in to see the projects on the server.')}</button>` : '';
+  m.body.addEventListener('click', (e) => { if (e.target.closest('[data-signin]')) { m.close(); loginModal(afterSignIn); } });
+  m.body.innerHTML = `<div class="desc">${mode === 'cloud' ? (Store.where === 'server' ? tr('Projects saved on the server, for everyone who signs in to this planner.') : tr('Projects saved to your account. They follow you to any device where you open this planner.')) : tr('Projects saved in this browser.')}${signIn}</div>
     <div class="plist">${list.map((x) => `<div class="prow${x.id === S.project.id ? ' current' : ''}" data-id="${esc(x.id)}">
       <div><div class="t">${esc(x.name || tr('Untitled'))}</div><div class="m">${[x.client, x.revision ? tr('Rev {rev}', { rev: x.revision }) : '', trn(x.screens || 0, '{n} screen', '{n} screens'), trn(x.cabinets || 0, '{n} cabinet', '{n} cabinets'), relTime(x.updated), x.where === 'browser' && mode === 'cloud' ? tr('this browser only') : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
       <div class="b">${x.id === S.project.id ? `<span class="m">${tr('Open now')}</span>` : `<button class="btn sm" data-open>${tr('Open')}</button><button class="btn sm danger" data-del>${tr('Delete')}</button>`}</div></div>`).join('')}</div>${exampleLink}`;
@@ -1157,7 +1172,11 @@ async function importFile(e) {
 
 function settingsModal() {
   const p = S.project, st = p.settings;
+  const server = Store.where === 'server', signedIn = server && Store.mode() === 'cloud';
   const body = `
+    ${server ? `<div class="msec"><h4>${tr('Server')}</h4>
+      <div class="desc">${signedIn ? tr('Signed in: projects and your panels are kept in the database on this server, for everyone who signs in.') : Store.serverError ? tr('The server is not set up yet: {why}', { why: esc(Store.serverError) }) : tr('Not signed in: your work stays in this browser.')}</div>
+      ${Store.serverError ? '' : `<div><button class="btn sm" data-srv="${signedIn ? 'out' : 'in'}">${signedIn ? tr('Sign out') : tr('Sign in')}</button></div>`}</div>` : ''}
     <div class="msec"><h4>${tr('Language')}</h4>
       <div class="seg" role="group" aria-label="${tr('Language')}">${Object.entries(LANGS).map(([k, name]) => `<button data-lang="${k}" lang="${k}" aria-pressed="${LANG === k}">${name}</button>`).join('')}</div>
       <div class="desc">${tr('For this browser, in every project. Text, numbers, drawings and exports follow it.')}</div></div>
@@ -1223,6 +1242,8 @@ function settingsModal() {
   ctrlOut();
   m.body.addEventListener('click', (e) => {
     // a new language: the whole page follows, and the dialog opens again in it
+    const sv = e.target.closest('[data-srv]');
+    if (sv) { if (sv.dataset.srv === 'out') Store.logout().then(() => location.reload()); else { m.close(); loginModal(afterSignIn); } return; }
     const lb = e.target.closest('[data-lang]');
     if (lb) { if (lb.dataset.lang !== LANG) { setLanguage(lb.dataset.lang); m.close(); settingsModal(); } return; }
     const b = e.target.closest('[data-portcap]'); if (!b) return; const el = $('#set-portcap', m.body); el.value = b.dataset.portcap; apply(el, true);
@@ -1325,7 +1346,8 @@ function panelsModal() {
   const render = () => {
     const box = $('#lib', m.body); if (!box) return;
     const mode = Store.mode();
-    const where = mode === 'cloud' ? tr('in your account, so they follow you to every device where you open this planner') : mode === 'local' ? tr('in this browser') : tr('only until you close the page, because this browser is blocking storage, so use Export to keep them');
+    const server = Store.where === 'server';
+    const where = mode === 'cloud' ? (server ? tr('on the server, for everyone who signs in to this planner') : tr('in your account, so they follow you to every device where you open this planner')) : mode === 'local' ? tr('in this browser') : tr('only until you close the page, because this browser is blocking storage, so use Export to keep them');
     const out = [`<div class="desc">${tr('Your panels show in every panel list, grouped by brand, in every project. Panels you add here are kept {where}. A project keeps a copy of each panel it uses, so its project file works anywhere.', { where })}</div>`];
     if (S.libNote) out.push(`<div class="readout">${S.libNote}</div>`);
     const site = Lib.site;
@@ -1336,7 +1358,7 @@ function panelsModal() {
     } else if (/(^|\.)github\.io$/i.test(location.hostname)) {
       out.push(`<div class="lib-sec"><h4>${tr('Panel list for everyone')}</h4><div class="desc">${tr("Upload an Excel file named <b>panels.xlsx</b> to this planner's GitHub repository, next to index.html. The planner reads it every time it opens, on every device.")} <button class="linkbtn" data-lib="reload">${tr('Check again')}</button></div></div>`);
     }
-    out.push(`<div class="lib-sec"><h4>${mode === 'cloud' ? tr('Added to your account') : mode === 'local' ? tr('Added in this browser') : tr('Added here')}</h4>${Lib.own.length ? panelListHtml(Lib.own, true) : `<div class="empty">${tr('None yet. Use New panel, or Import an Excel or CSV file with one row per panel.')}</div>`}</div>`);
+    out.push(`<div class="lib-sec"><h4>${mode === 'cloud' ? (server ? tr('Added on the server') : tr('Added to your account')) : mode === 'local' ? tr('Added in this browser') : tr('Added here')}</h4>${Lib.own.length ? panelListHtml(Lib.own, true) : `<div class="empty">${tr('None yet. Use New panel, or Import an Excel or CSV file with one row per panel.')}</div>`}</div>`);
     const tpl = /(^|\.)github\.io$/i.test(location.hostname) ? 'panels-template.xlsx' : 'https://juicypeachxx.github.io/Led-wall-calc/panels-template.xlsx';
     out.push(`<div class="desc">${tr('Spreadsheet columns: Brand, Model, Width (mm), Height (mm), Pixels across, Pixels down, and if you have them Weight (kg), Max power (W), Typical power (W) and Stock. Pixel pitch can stand in for the pixel counts.')} <a class="linkbtn" href="${tpl}" download target="_blank" rel="noopener">${tr('Download the Excel template')}</a>${tr('; Export gives a CSV file with the same columns.')}</div>`);
     box.innerHTML = out.join('');
@@ -1563,6 +1585,50 @@ async function runExport(kind) {
   } catch (e) { console.error(e); toast(e && e.message ? e.message : tr('The export failed.')); }
 }
 
+/* ---------- the planner's own server (NAS.md) ---------- */
+// signed in, to the server or the account: its panels, and the project to carry on with
+async function afterSignIn() {
+  await syncCloudPanels();
+  // on a shared server each browser keeps its own last project; in Claude the account remembers it
+  const last = Store.where === 'server' ? S.project.id : await Store.cloudLast();
+  if (last) {
+    const cp = await Store.loadCloud(last);
+    if (cp && S.pristine) {
+      if (cp.id !== S.project.id || String(cp.updated) > String(S.project.updated)) { setProject(cp); S.lastSetId = cp.id; renderAll(); }
+      else if (String(cp.updated) < String(S.project.updated)) Store.save(S.project);
+    } else if (!cp && S.pristine && !S.project.example && !S.fresh) Store.save(S.project);
+  } else if (!S.project.example && !S.fresh) {
+    // first visit with an account: keep this browser's project there too
+    Store.save(S.project); S.lastSetId = S.project.id; Store.setLast(S.project.id);
+  }
+  updateSavePill();
+}
+// the shared password; without it the planner keeps working in this browser
+function loginModal(then) {
+  if ($('#login-pw')) return;
+  const m = openModal({ title: tr('Sign in'), body: `<form class="login-form" novalidate>
+      <div class="desc">${tr('This planner keeps its projects on the server, for everyone who signs in with the planner password.')}</div>
+      <label class="fld"><span>${tr('Password')}</span><input type="password" id="login-pw" autocomplete="current-password"></label>
+      <div class="warnline" id="login-err" hidden></div><button type="submit" hidden></button></form>`, foot: [
+    { label: tr('Work in this browser only'), run: (close) => close() },
+    { label: tr('Sign in'), cls: 'primary', run: () => submit() },
+  ] });
+  const err = $('#login-err', m.body);
+  const submit = async () => {
+    const pw = $('#login-pw', m.body).value; if (!pw) return;
+    try {
+      await Store.login(pw); m.close(); toast(tr('Signed in'));
+      if (then) await then();
+    } catch (e) {
+      err.hidden = false;
+      err.textContent = e.code === 'password' ? tr('Wrong password.') : e.code === 'locked' ? tr('Too many wrong passwords. Try again in 15 minutes.')
+        : e.code === 'setup' || e.code === 'db' ? tr('The server is not set up yet: {why}', { why: e.message }) : tr('Could not sign in.');
+    }
+    updateSavePill();
+  };
+  $('form', m.body).addEventListener('submit', (e) => { e.preventDefault(); submit(); });
+}
+
 /* ---------- boot ---------- */
 function start(hot) {
   applyTheme(); applyMode(); applyLang();
@@ -1586,20 +1652,8 @@ function start(hot) {
   Store.onChange(updateSavePill);
   Downloads.init().then(renderExportMenu);
   Store.initCloud().then(async (ok) => {
-    if (ok) {
-      await syncCloudPanels();
-      const last = await Store.cloudLast();
-      if (last) {
-        const cp = await Store.loadCloud(last);
-        if (cp && S.pristine) {
-          if (cp.id !== S.project.id || String(cp.updated) > String(S.project.updated)) { setProject(cp); S.lastSetId = cp.id; renderAll(); }
-          else if (String(cp.updated) < String(S.project.updated)) Store.save(S.project);
-        } else if (!cp && S.pristine && !S.project.example && !S.fresh) Store.save(S.project);
-      } else if (!S.project.example && !S.fresh) {
-        // first visit with an account: keep this browser's project there too
-        Store.save(S.project); S.lastSetId = S.project.id; Store.setLast(S.project.id);
-      }
-    }
+    if (ok) await afterSignIn();
+    else if (Store.needsLogin) loginModal(afterSignIn);
     updateSavePill();
   });
   if (window.claude && window.claude.hot && typeof window.claude.hot.snapshot === 'function') {
