@@ -8,14 +8,14 @@ Steps 1 and 2 work from anywhere, through QuickConnect. Step 3, the database, ne
 
 ## 1. The files (File Station)
 
-1. Get **led-for-nas.zip** (Claude can send it). It holds one folder, `led`.
+1. Get **led-for-nas.zip** (Claude can send it). It holds one folder, `led`. Don't unzip it on your computer: upload the zip as it is and let the NAS extract it. Dragging unzipped files into `web` can put them loose in `web`, where the planner's `index.html` replaces timebox's start page.
 2. In File Station, open the `web` folder (where timebox's files are), click **Upload › Upload - Skip** and choose the zip.
 3. Right-click the zip › **Extract › Extract here**, then delete the zip. You now have:
    - `web/led/index.html`
    - `web/led/api/index.php`
    - `web/led/api/config.php`
 
-Without the zip, take the files from the planner's repository on GitHub (**Code › Download ZIP**): `index.html` goes into `web/led`, and `server/api/index.php` and `server/api/config.sample.php` into `web/led/api`, where you rename `config.sample.php` to `config.php`.
+Without the zip, take the files from the planner's repository on GitHub (**Code › Download ZIP**). In `web`, create the folder `led` (**Create › Create folder**) and open it before you upload anything: `index.html` goes into `web/led`, never into `web` itself. Then create `api` inside `led`, and upload `server/api/index.php` and `server/api/config.sample.php` into it, where you rename `config.sample.php` to `config.php`.
 
 ## 2. The settings file
 
