@@ -35,7 +35,7 @@ This repository is public, so anyone can download `panels.xlsx`. Leave stock num
 - **Data:** snake or Z routing along rows or columns from any corner, whole rows or fill to capacity per port (650,000 px per port by default, 325,000 for 10-bit), optional backup cables.
 - **Controller:** suggests a NovaStar VX Pro controller for the whole project, or checks the one you choose, with an output-by-output table.
 - **Power:** circuits from breaker size, voltage, maximum load and power factor, following the data path.
-- **Mounting:** flown or ground stack for each screen. Flown screens are built from the top row down and hang from flying bars; ground stacks are built from the bottom row up and stand on ground beams with adjustable feet (one per cabinet column), held by rear supports, upright posts on H-frame bases, at both ends and about every 2 m. The planner gives the loads for the rigging or structural design (weight per metre, heaviest column, centre of gravity, front area for wind), draws the mounting in the layout and the 3D view, and adds flying-bar lengths, ground beams and rear supports to the packing list.
+- **Mounting:** flown or ground stack for each screen. Flown screens are built from the top row down and hang from flying bars. Ground stacks are built from the bottom row up and stand on ground beams with adjustable feet, one per cabinet column. Behind the screen, at the joints between beams, stand H-frames (a ladder on a pair of floor rails, clamped to the cabinets) and, if you like, single posts between them. In the Mounting card you set an H-frame every so many beams (always at both ends), posts between or not, and the frame height, and tap any joint to switch it between H-frame, post and nothing. The planner gives the loads for the rigging or structural design (weight per metre, heaviest column, centre of gravity, front area for wind), draws the mounting in the layout and the 3D view, and adds flying-bar lengths, ground beams, H-frames and posts to the packing list.
 - **Stage:** several screens on one stage with snapping and alignment, a 3D view with a 1.75 m person for scale.
 - **Exports:** PDF report (overview, 3D view, controller, elevations with build order, data cabling, specifications and power, packing list), layout and plan PNGs, pixel map PNG at native resolution, packing list and cabinet list spreadsheets (CSV), and the project file (JSON).
 
@@ -49,7 +49,7 @@ Projects save automatically in the browser you use, on that device, as soon as y
 - Current is calculated as watts ÷ (volts × power factor); the default power factor is 0.95.
 - Pixels per data port and controller capacities are NovaStar's 8-bit, 60 Hz figures. Colour depth and frame rate change them, so check your processor.
 - Minimum viewing distance uses the 1 m per mm of pixel pitch rule of thumb.
-- Loads are for the cabinets only: flying bars, ground beams, supports, cables and wind add to them. The number and height of rear supports in the packing list is a starting point; follow the ground-stack system's instructions.
+- Loads are for the cabinets only: flying bars, ground beams, H-frames, cables and wind add to them. Follow the ground-stack system's instructions for the frames and their height.
 - Reading Excel files needs a recent browser (Safari 16.4 or later on iPad and iPhone). Older browsers can import the list saved as CSV.
 - The planner documents geometry and configuration. It does not check structure, rigging or the electrical installation; have those checked by the responsible engineer.
 

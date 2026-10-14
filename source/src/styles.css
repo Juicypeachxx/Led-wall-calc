@@ -198,6 +198,11 @@ details.more > div { margin-top: 8px; }
 .corner svg { width: 26px; height: 26px; }
 .corner button:hover { border-color: var(--ink-3); color: var(--ink); }
 .sigrow { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: center; }
+.jt-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.jt { width: 28px; height: 30px; padding: 0; border: 1px solid var(--line-2); background: var(--surface-2); border-radius: 4px; font-family: var(--font-mono); font-weight: 600; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+.jt[data-v="H"] { border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft); }
+.jt[data-v="-"] { color: var(--ink-3); }
+.jt:hover { border-color: var(--ink-3); }
 
 /* ---------- results ---------- */
 .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border-radius: 0 0 var(--r) var(--r); overflow: hidden; }

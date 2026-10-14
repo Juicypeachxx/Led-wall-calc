@@ -204,7 +204,7 @@ const View3D = (() => {
   }
 
   // Mounting, schematic only: flying bars with chains and hoists on top, or a ground stack: ground beams on
-  // adjustable feet under the cabinets and upright posts on H-frame bases behind them.
+  // adjustable feet under the cabinets and H-frames (ladders on floor rails) behind them.
   function addSupports(group, disposables, s, comp, facets, H, depth, colW, colors) {
     const mount = s.mount || 'ground';
     const mat = new THREE.MeshStandardMaterial({ color: colors.support, roughness: 0.65, metalness: 0.4 }); disposables.push(mat);
@@ -225,9 +225,8 @@ const View3D = (() => {
         items.push({ f: facets[i], lx: 0, ly: H + 1.4, lz: -depth / 2, sx: 0.2, sy: 0.28, sz: 0.2 });                         // hoist
       }
     } else {
-      // ground stack (see groundSupports in the engine): a ground beam under each cabinet column on two
-      // adjustable feet, just below the bottom edge; behind the screen, upright posts on H-shaped floor frames
-      // with four levelling feet, ladder frames at both ends. No diagonal braces.
+      // ground stack (see groundFrames in the engine): a ground beam under each cabinet column on two
+      // adjustable feet, just below the bottom edge, and H-frames behind the screen at both ends of every beam.
       const floor = -(num(s.y) || 0) / 1000;                          // the floor, in the screen's own height
       const foot = (f, lx, y0, z) => {                                 // levelling foot: plate on the floor, spindle above
         items.push({ f, lx, ly: y0 + 0.008, lz: z, sx: 0.1, sy: 0.016, sz: 0.1 });
@@ -237,21 +236,23 @@ const View3D = (() => {
         items.push({ f: facets[k], lx: 0, ly: -0.04, lz: -depth / 2, sx: colW - 0.012, sy: 0.08, sz: 0.09 });
         for (const lx of [-colW / 2 + 0.07, colW / 2 - 0.07]) foot(facets[k], lx, -0.15, -depth / 2);
       }
-      const len = Math.min(1.6, Math.max(0.9, H * 0.35)), gap = 0.44, top = H + 0.25, baseY = floor + 0.075;
-      const pos = groundSupports(comp.W).map((u) => u / 1000);
-      pos.forEach((u, i) => {
-        const k = Math.min(C - 1, Math.max(0, Math.floor(u / colW))), f = facets[k], lx = u - (k + 0.5) * colW;
-        const z0 = -depth - 0.06, z1 = z0 - len, end = i === 0 || i === pos.length - 1;
-        for (const dx of [-gap / 2, gap / 2]) items.push({ f, lx: lx + dx, ly: baseY + 0.03, lz: (z0 + z1) / 2, sx: 0.06, sy: 0.06, sz: len });   // H frame: two rails
-        for (const z of [z0 - 0.08, (z0 + z1) / 2, z1 + 0.08]) items.push({ f, lx, ly: baseY + 0.03, lz: z, sx: gap, sy: 0.05, sz: 0.05 });       // and the cross bars
-        for (const dx of [-gap / 2, gap / 2]) for (const z of [z0 - 0.05, z1 + 0.05]) foot(f, lx + dx, floor, z);
-        const postH = top - (baseY + 0.06), zp = z0 - 0.06;
-        items.push({ f, lx, ly: baseY + 0.06 + postH / 2, lz: zp, sx: 0.07, sy: postH, sz: 0.07 });                                             // upright post
-        if (end) {                                                       // at the ends a ladder frame: second upright and rungs
-          const zb = zp - 0.5, rungs = Math.max(2, Math.floor(postH / 0.6));
-          items.push({ f, lx, ly: baseY + 0.06 + postH / 2, lz: zb, sx: 0.06, sy: postH, sz: 0.06 });
-          for (let r = 1; r <= rungs; r++) items.push({ f, lx, ly: baseY + 0.06 + postH * r / (rungs + 1), lz: (zp + zb) / 2, sx: 0.04, sy: 0.04, sz: 0.5 });
+      // at the joints between beams, as laid out for this screen: H-frames (a ladder of two uprights with rungs)
+      // or single posts, each on two floor rails running back from the screen and clamped to the cabinets
+      const T = 0.05, back = Math.min(2.2, Math.max(1.4, H * 0.6)), zf = -0.05, zr = -depth - back;
+      const z1 = -depth - 0.25, z2 = z1 - 0.6, yb = floor + T, top = floor + groundFrameHeight(s, comp), tall = Math.max(0.3, top - yb);
+      const rungs = Math.max(2, Math.round(tall / 0.45)), arm = Math.min(H * 0.55, top - 0.2);
+      const layout = groundLayout(s, C);
+      groundFrames(C, colW).forEach((u, j) => {
+        const what = layout[j]; if (what !== 'H' && what !== 'P') return;
+        const k = Math.min(C - 1, Math.floor(u / colW + 1e-9)), f = facets[k], lx = u - (k + 0.5) * colW;
+        for (const dx of [-0.065, 0.065]) items.push({ f, lx: lx + dx, ly: floor + T / 2, lz: (zf + zr) / 2, sx: T, sy: T, sz: zf - zr });   // floor rails
+        items.push({ f, lx, ly: floor + T * 0.7, lz: zr + 0.08, sx: 0.2, sy: T * 1.4, sz: 0.1 });                                           // clamp at the back
+        items.push({ f, lx, ly: yb + tall / 2, lz: z1, sx: T, sy: tall, sz: T });                                                           // front upright (the post)
+        if (what === 'H') {
+          items.push({ f, lx, ly: yb + tall / 2, lz: z2, sx: T, sy: tall, sz: T });                                                         // back upright
+          for (let r = 1; r <= rungs; r++) items.push({ f, lx, ly: yb + tall * r / (rungs + 1), lz: (z1 + z2) / 2, sx: T * 0.9, sy: T * 0.9, sz: z1 - z2 });   // rungs
         }
+        items.push({ f, lx, ly: arm, lz: (z1 - depth) / 2, sx: 0.035, sy: 0.035, sz: -depth - z1 });                                         // arm to the cabinets
       });
     }
     if (!items.length) return;
@@ -268,7 +269,7 @@ const View3D = (() => {
   function contentKey(project, s, face) {
     const used = [s.panel, s.mix && s.mix.small, s.mix && s.mix.big].map((id) => { const p = getPanel(project, id); return [p.id, p.w, p.h, p.px, p.py, p.wMax, p.wAvg]; });
     const st = project.settings;
-    return JSON.stringify([s.name, s.color, s.sizeMode, s.panel, s.cols, s.rows, s.tw, s.th, s.fit, s.mix, s.shape, s.angle, s.holes, s.data, s.mount, s.mount === 'ground' ? Math.round(num(s.y) || 0) : 0, face, used,
+    return JSON.stringify([s.name, s.color, s.sizeMode, s.panel, s.cols, s.rows, s.tw, s.th, s.fit, s.mix, s.shape, s.angle, s.holes, s.data, s.mount, s.mount === 'ground' ? [Math.round(num(s.y) || 0), s.gs] : 0, face, used,
       face === 'data' ? [st.portCapacity, st.portPrefix] : 0, face === 'power' ? [st.voltage, st.circuitAmps, st.loadFactor, st.powerFactor, st.powerBasis] : 0]);
   }
 

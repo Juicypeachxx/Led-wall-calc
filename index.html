@@ -223,6 +223,11 @@ details.more > div { margin-top: 8px; }
 .corner svg { width: 26px; height: 26px; }
 .corner button:hover { border-color: var(--ink-3); color: var(--ink); }
 .sigrow { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: center; }
+.jt-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.jt { width: 28px; height: 30px; padding: 0; border: 1px solid var(--line-2); background: var(--surface-2); border-radius: 4px; font-family: var(--font-mono); font-weight: 600; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+.jt[data-v="H"] { border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft); }
+.jt[data-v="-"] { color: var(--ink-3); }
+.jt:hover { border-color: var(--ink-3); }
 
 /* ---------- results ---------- */
 .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border-radius: 0 0 var(--r) var(--r); overflow: hidden; }
@@ -436,7 +441,7 @@ details.more > div { margin-top: 8px; }
           </div>
         </div>
       </div>
-      <div class="card-foot">Drag a screen to move it. Shift-click selects several. Scroll or pinch to zoom, drag empty space to pan. Hold Alt while dragging to skip snapping. Screens are drawn flat (developed); yaw, depth and curves show in the 3D view. A bar with chains on top marks a flown screen, ground beams with feet underneath a ground stack.</div>
+      <div class="card-foot">Drag a screen to move it. Shift-click selects several. Scroll or pinch to zoom, drag empty space to pan. Hold Alt while dragging to skip snapping. Screens are drawn flat (developed); yaw, depth and curves show in the 3D view. A bar with chains on top marks a flown screen, ground beams with feet underneath a ground stack (its H-frames stand behind the screen and show in the 3D view).</div>
     </div>
     <div class="card">
       <div class="card-head">
@@ -2030,17 +2035,28 @@ const KINDS = {
    with outriggers and is built from the bottom row up. */
 const MOUNTS = {
   flown: { label: 'Flown', long: 'Flown (hung from flying bars)' },
-  ground: { label: 'Ground stack', long: 'Ground stack (on ground beams, with rear supports)' },
+  ground: { label: 'Ground stack', long: 'Ground stack (on ground beams, with H-frames behind)' },
 };
 const MOUNT_ORDER = ['flown', 'ground'];
-// A ground stack as built with portable ground-stack systems: the cabinets stand on ground beams, one per
-// cabinet column, each on two adjustable feet; behind the screen an upright support post stands on an
-// H-shaped floor frame with levelling feet, at both ends (ladder frames there) and about every 2 m between.
-// Returns where the supports go, in mm along the (developed) screen width.
-function groundSupports(W) {
-  const n = Math.max(2, Math.round(W / 2000) + 1), edge = Math.min(100, W / 4);
-  return Array.from({ length: n }, (_, i) => edge + (W - 2 * edge) * i / (n - 1));
+// A ground stack as built with portable ground-stack systems (after photos of the user's own): the cabinets
+// stand on ground beams, one per cabinet column, on adjustable feet. Behind the screen, at the joints between
+// beams (0 = left end, cols = right end), stand H-frames: a ladder (two uprights with rungs) on a pair of floor
+// rails running back from the screen, clamped to the cabinets; optionally single posts on the same rails between
+// them. Per screen (s.gs): an H-frame every `every` beams (always at both ends), posts at the joints between
+// or not, the frame height (null = 0.3 m above the screen), and per-joint changes on top ('H', 'P' or '-').
+function defaultGroundStack() { return { every: 1, posts: false, height: null, over: {} }; }
+function groundLayout(s, cols) {
+  const g = s.gs || defaultGroundStack(), every = clamp(int(g.every, 1), 1, 200), out = [];
+  for (let j = 0; j <= cols; j++) out.push(j % every === 0 || j === cols ? 'H' : g.posts ? 'P' : '-');
+  for (const [k, v] of Object.entries(g.over || {})) { const j = int(k, -1); if (j >= 0 && j <= cols && (v === 'H' || v === 'P' || v === '-')) out[j] = v; }
+  return out;
 }
+// height of the frames and posts above the floor, metres
+function groundFrameHeight(s, comp) {
+  const g = s.gs || {};
+  return g.height > 0 ? g.height : (num(s.y) + comp.H) / 1000 + 0.3;
+}
+function groundFrames(cols, colW) { return Array.from({ length: cols + 1 }, (_, i) => i * colW); }
 function buildOrderText(mount) {
   return mount === 'flown'
     ? 'top row first, left to right, then each row below (a flown screen is hung from the top down)'
@@ -2084,6 +2100,7 @@ function defaultScreen(kind = 'free') {
     shape: k.shape || 'flat', angle: k.angle || 5,
     holes: [],
     data: { dir: 'h', start: 'bl', path: 'snake', split: 'lines' },
+    gs: defaultGroundStack(),
   };
 }
 
@@ -2157,6 +2174,9 @@ function normalizeProject(raw) {
     s.mount = rs.mount === 'back' ? 'ground' : MOUNTS[rs.mount] ? rs.mount : (s.y > 0 ? 'flown' : 'ground');
     s.angle = clamp(num(s.angle, 5), 0.5, 45);
     s.holes = Array.isArray(s.holes) ? s.holes.filter((k) => typeof k === 'string' && /^\d+,\d+$/.test(k)).slice(0, 20000) : [];
+    const g = s.gs && typeof s.gs === 'object' ? s.gs : {};
+    s.gs = { every: clamp(int(g.every, 1), 1, 200), posts: g.posts === true, height: num(g.height, 0) > 0 ? clamp(num(g.height), 0.3, 30) : null, over: {} };
+    if (g.over && typeof g.over === 'object') for (const [k, v] of Object.entries(g.over)) if (/^\d{1,3}$/.test(k) && (v === 'H' || v === 'P' || v === '-')) s.gs.over[k] = v;
     s.data = Object.assign({ dir: 'h', start: 'bl', path: 'snake', split: 'lines' }, s.data || {});
     if (!['h', 'v'].includes(s.data.dir)) s.data.dir = 'h';
     if (!['bl', 'br', 'tl', 'tr'].includes(s.data.start)) s.data.start = 'bl';
@@ -2672,9 +2692,11 @@ function packingList(project, comps, plan) {
     const sel = grounds.filter(({ c }) => c.colW === w), parts = sel.map(({ s, c }) => ({ name: s.name, n: c.cols }));
     items.push({ group: 'Rigging', item: `Ground beam ${+w.toFixed(1)} mm with 2 adjustable feet (one per cabinet column)`, qty: sum(parts, (x) => x.n), parts, note: 'the cabinets stand on these' });
   }
-  if (grounds.length) {
-    const parts = grounds.map(({ s, c }) => ({ name: s.name, n: groundSupports(c.W).length, label: `${groundSupports(c.W).length} for ${fmtNum(c.H / 1000, 2)} m high` }));
-    items.push({ group: 'Rigging', item: 'Rear support: upright post on an H-frame base with levelling feet', qty: sum(parts, (x) => x.n), parts, note: 'at both ends and about every 2 m; number and post height as the ground-stack system requires' });
+  // H-frames and posts behind the screen, as laid out per screen (see groundLayout)
+  for (const [kind, item, note] of [['H', 'H-frame: ladder on a pair of floor rails', 'clamped to the cabinets at the joints between ground beams'],
+    ['P', 'Post on a pair of floor rails (between H-frames)', 'clamped to the cabinets']]) {
+    const parts = grounds.map(({ s, c }) => { const n = groundLayout(s, c.cols).filter((x) => x === kind).length; return { name: s.name, n, label: `${fmtInt(n)} × ${fmtNum(groundFrameHeight(s, c), 2)} m high` }; }).filter((x) => x.n);
+    if (parts.length) items.push({ group: 'Rigging', item, qty: sum(parts, (x) => x.n), parts, note });
   }
   // power
   if (list.length && list.every(({ c }) => c.power)) {
@@ -2749,7 +2771,7 @@ if (typeof module !== 'undefined') {
   module.exports = { BUILTIN_PANELS, KINDS, CONTROLLERS, computeScreen, computeTotals, suggest169, exampleProject, blankProject, normalizeProject,
     ratioInfo, splitLines, orderLines, facetTransforms, colLetter, slug, fmtInt, fmtM, fmtSize, getPanel, defaultScreen, placeNewScreen, holesInGrid, defaultSettings,
     planControllers, assignControllers, packingList, chainLinks, MOUNTS, MOUNT_ORDER, buildOrderText, packQty, packPart,
-    normalizePanel, panelName, panelKey, panelIdFor, samePanel, sheetField, sheetNum, panelsFromTable, findPanel, KIND_ORDER, groundSupports };
+    normalizePanel, panelName, panelKey, panelIdFor, samePanel, sheetField, sheetNum, panelsFromTable, findPanel, KIND_ORDER, groundFrames, groundLayout, groundFrameHeight, defaultGroundStack };
 }
 
 /* ============================================================
@@ -3366,7 +3388,7 @@ function drawStage(pen, v) {
       const colPx = sw / comp.cols, fw = Math.max(thin * 2.5, Math.min(fs * 0.3, colPx * 0.18)), fh = bh + fs * 0.22;
       const xs = colPx >= fs * 0.9
         ? Array.from({ length: comp.cols }, (_, c) => [sx + c * colPx + colPx * 0.12, sx + (c + 1) * colPx - colPx * 0.12 - fw]).flat()
-        : groundSupports(comp.W).map((u) => sx + u * s - fw / 2);
+        : ((n) => Array.from({ length: n }, (_, i) => sx + (sw - fw) * i / (n - 1)))(Math.max(2, Math.round(comp.W / 2000) + 1));
       for (const x of xs) pen.rect(x, sy + sh - fh, fw, fh, { fill: mk });
     }
     if (v.interactive) pen.rect(sx, sy, sw, sh, { fill: '#000', opacity: 0, attrs: { 'data-sid': sc.id, class: 'hit' } });
@@ -3800,7 +3822,7 @@ const View3D = (() => {
   }
 
   // Mounting, schematic only: flying bars with chains and hoists on top, or a ground stack: ground beams on
-  // adjustable feet under the cabinets and upright posts on H-frame bases behind them.
+  // adjustable feet under the cabinets and H-frames (ladders on floor rails) behind them.
   function addSupports(group, disposables, s, comp, facets, H, depth, colW, colors) {
     const mount = s.mount || 'ground';
     const mat = new THREE.MeshStandardMaterial({ color: colors.support, roughness: 0.65, metalness: 0.4 }); disposables.push(mat);
@@ -3821,9 +3843,8 @@ const View3D = (() => {
         items.push({ f: facets[i], lx: 0, ly: H + 1.4, lz: -depth / 2, sx: 0.2, sy: 0.28, sz: 0.2 });                         // hoist
       }
     } else {
-      // ground stack (see groundSupports in the engine): a ground beam under each cabinet column on two
-      // adjustable feet, just below the bottom edge; behind the screen, upright posts on H-shaped floor frames
-      // with four levelling feet, ladder frames at both ends. No diagonal braces.
+      // ground stack (see groundFrames in the engine): a ground beam under each cabinet column on two
+      // adjustable feet, just below the bottom edge, and H-frames behind the screen at both ends of every beam.
       const floor = -(num(s.y) || 0) / 1000;                          // the floor, in the screen's own height
       const foot = (f, lx, y0, z) => {                                 // levelling foot: plate on the floor, spindle above
         items.push({ f, lx, ly: y0 + 0.008, lz: z, sx: 0.1, sy: 0.016, sz: 0.1 });
@@ -3833,21 +3854,23 @@ const View3D = (() => {
         items.push({ f: facets[k], lx: 0, ly: -0.04, lz: -depth / 2, sx: colW - 0.012, sy: 0.08, sz: 0.09 });
         for (const lx of [-colW / 2 + 0.07, colW / 2 - 0.07]) foot(facets[k], lx, -0.15, -depth / 2);
       }
-      const len = Math.min(1.6, Math.max(0.9, H * 0.35)), gap = 0.44, top = H + 0.25, baseY = floor + 0.075;
-      const pos = groundSupports(comp.W).map((u) => u / 1000);
-      pos.forEach((u, i) => {
-        const k = Math.min(C - 1, Math.max(0, Math.floor(u / colW))), f = facets[k], lx = u - (k + 0.5) * colW;
-        const z0 = -depth - 0.06, z1 = z0 - len, end = i === 0 || i === pos.length - 1;
-        for (const dx of [-gap / 2, gap / 2]) items.push({ f, lx: lx + dx, ly: baseY + 0.03, lz: (z0 + z1) / 2, sx: 0.06, sy: 0.06, sz: len });   // H frame: two rails
-        for (const z of [z0 - 0.08, (z0 + z1) / 2, z1 + 0.08]) items.push({ f, lx, ly: baseY + 0.03, lz: z, sx: gap, sy: 0.05, sz: 0.05 });       // and the cross bars
-        for (const dx of [-gap / 2, gap / 2]) for (const z of [z0 - 0.05, z1 + 0.05]) foot(f, lx + dx, floor, z);
-        const postH = top - (baseY + 0.06), zp = z0 - 0.06;
-        items.push({ f, lx, ly: baseY + 0.06 + postH / 2, lz: zp, sx: 0.07, sy: postH, sz: 0.07 });                                             // upright post
-        if (end) {                                                       // at the ends a ladder frame: second upright and rungs
-          const zb = zp - 0.5, rungs = Math.max(2, Math.floor(postH / 0.6));
-          items.push({ f, lx, ly: baseY + 0.06 + postH / 2, lz: zb, sx: 0.06, sy: postH, sz: 0.06 });
-          for (let r = 1; r <= rungs; r++) items.push({ f, lx, ly: baseY + 0.06 + postH * r / (rungs + 1), lz: (zp + zb) / 2, sx: 0.04, sy: 0.04, sz: 0.5 });
+      // at the joints between beams, as laid out for this screen: H-frames (a ladder of two uprights with rungs)
+      // or single posts, each on two floor rails running back from the screen and clamped to the cabinets
+      const T = 0.05, back = Math.min(2.2, Math.max(1.4, H * 0.6)), zf = -0.05, zr = -depth - back;
+      const z1 = -depth - 0.25, z2 = z1 - 0.6, yb = floor + T, top = floor + groundFrameHeight(s, comp), tall = Math.max(0.3, top - yb);
+      const rungs = Math.max(2, Math.round(tall / 0.45)), arm = Math.min(H * 0.55, top - 0.2);
+      const layout = groundLayout(s, C);
+      groundFrames(C, colW).forEach((u, j) => {
+        const what = layout[j]; if (what !== 'H' && what !== 'P') return;
+        const k = Math.min(C - 1, Math.floor(u / colW + 1e-9)), f = facets[k], lx = u - (k + 0.5) * colW;
+        for (const dx of [-0.065, 0.065]) items.push({ f, lx: lx + dx, ly: floor + T / 2, lz: (zf + zr) / 2, sx: T, sy: T, sz: zf - zr });   // floor rails
+        items.push({ f, lx, ly: floor + T * 0.7, lz: zr + 0.08, sx: 0.2, sy: T * 1.4, sz: 0.1 });                                           // clamp at the back
+        items.push({ f, lx, ly: yb + tall / 2, lz: z1, sx: T, sy: tall, sz: T });                                                           // front upright (the post)
+        if (what === 'H') {
+          items.push({ f, lx, ly: yb + tall / 2, lz: z2, sx: T, sy: tall, sz: T });                                                         // back upright
+          for (let r = 1; r <= rungs; r++) items.push({ f, lx, ly: yb + tall * r / (rungs + 1), lz: (z1 + z2) / 2, sx: T * 0.9, sy: T * 0.9, sz: z1 - z2 });   // rungs
         }
+        items.push({ f, lx, ly: arm, lz: (z1 - depth) / 2, sx: 0.035, sy: 0.035, sz: -depth - z1 });                                         // arm to the cabinets
       });
     }
     if (!items.length) return;
@@ -3864,7 +3887,7 @@ const View3D = (() => {
   function contentKey(project, s, face) {
     const used = [s.panel, s.mix && s.mix.small, s.mix && s.mix.big].map((id) => { const p = getPanel(project, id); return [p.id, p.w, p.h, p.px, p.py, p.wMax, p.wAvg]; });
     const st = project.settings;
-    return JSON.stringify([s.name, s.color, s.sizeMode, s.panel, s.cols, s.rows, s.tw, s.th, s.fit, s.mix, s.shape, s.angle, s.holes, s.data, s.mount, s.mount === 'ground' ? Math.round(num(s.y) || 0) : 0, face, used,
+    return JSON.stringify([s.name, s.color, s.sizeMode, s.panel, s.cols, s.rows, s.tw, s.th, s.fit, s.mix, s.shape, s.angle, s.holes, s.data, s.mount, s.mount === 'ground' ? [Math.round(num(s.y) || 0), s.gs] : 0, face, used,
       face === 'data' ? [st.portCapacity, st.portPrefix] : 0, face === 'power' ? [st.voltage, st.circuitAmps, st.loadFactor, st.powerFactor, st.powerBasis] : 0]);
   }
 
@@ -4872,6 +4895,7 @@ function renderCfg() {
   <div class="card"><div class="card-head"><h3><span class="step">5</span>Mounting</h3></div>
     <div class="card-body">
       <div class="seg full" data-seg="mount">${MOUNT_ORDER.map((k) => segBtn(k, MOUNTS[k].label, s.mount)).join('')}</div>
+      ${s.mount === 'ground' ? groundHtml(s) : ''}
       <div class="readout" data-ro="mount"></div>
     </div></div>`;
   refreshReadouts();
@@ -4881,6 +4905,14 @@ function ctrlSummary(pl) {
   let t = `Controller for the whole project: <b>${pl.count} × NovaStar ${esc(D.name)}</b>${pl.auto ? ' (suggested)' : ''} · ${pl.count === 1 ? `${outs} of ${D.ports} outputs` : `${fmtInt(outs)} outputs on ${pl.count} units${pl.count <= 4 ? ` (${pl.units.map((u) => u.used).join(' + ')})` : ''}`} · ${fmtNum(pl.pixels / 1e6, 2)} M px${pl.count === 1 ? ` of ${fmtNum(D.capacity / 1e6, 2)} M` : ''}`;
   if (pl.warnings.length) t += pl.warnings.map((w) => `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${esc(w)}</span></div>`).join('');
   return t;
+}
+// ground stack: H-frames every N beams, optional posts between, frame height, and per-joint changes (RO.joints)
+function groundHtml(s) {
+  const g = s.gs || defaultGroundStack();
+  return `<div class="row2">${numField('cf-gs-every', 'H-frame every', 'gs.every', g.every, { type: 'int', min: 1, max: 200, step: 1, unit: g.every === 1 ? 'beam' : 'beams' })}
+      <label class="fld"><span>Frame height</span><div class="unit-in"><input type="number" id="cf-gs-height" data-bind="gs.height" data-type="numopt" min="0.3" max="30" step="0.1" value="${g.height ?? ''}" placeholder="auto"><i>m</i></div></label></div>
+    <label class="chk"><input type="checkbox" data-gs="posts"${g.posts ? ' checked' : ''}> Posts between the H-frames</label>
+    <div data-ro="joints"></div>`;
 }
 function deltaTxt(d) { if (Math.abs(d) < 0.5) return 'exact'; return `${d > 0 ? '+' : '−'}${fmtNum(Math.abs(d) / 1000, 3)} m`; }
 function shortName(p) { return p.name.replace(/^Generic /, ''); }
@@ -4925,6 +4957,14 @@ const RO = {
       : '<div class="desc" style="color:var(--ink-3)">In the Cabinets plan, click a cabinet to leave its position empty.</div>';
   },
   warn(s, c) { return c.warnings.map((w) => `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${esc(w)}</span></div>`).join(''); },
+  joints(s, c) {
+    if (s.mount !== 'ground') return '';
+    const L = groundLayout(s, c.cols), sym = { H: 'H', P: '|', '-': '·' }, what = { H: 'H-frame', P: 'post', '-': 'nothing' };
+    const where = (j) => (j === 0 ? 'left end' : j === c.cols ? 'right end' : `between ${colLetter(j - 1)} and ${colLetter(j)}`);
+    const custom = Object.keys((s.gs && s.gs.over) || {}).length;
+    return `<div class="jt-row" role="group" aria-label="Joints from left to right">${L.map((v, j) => `<button class="jt" data-joint="${j}" data-v="${v}" title="Joint ${where(j)}: ${what[v]}" aria-label="Joint ${where(j)}: ${what[v]}">${sym[v]}</button>`).join('')}</div>
+      <div class="desc">The joints between ground beams, left to right: H = H-frame, | = post, · = nothing. Tap one to change it.${custom ? ` <button class="linkbtn" data-act="gs-reset">Back to the pattern</button>` : ''}</div>`;
+  },
   mount(s, c) {
     const k = c.support, m = k.mount;
     const along = { flown: 'along the flying bars', ground: 'along the base beams' }[m];
@@ -4932,8 +4972,11 @@ const RO = {
     let t = c.weight === null
       ? `Add a weight to the panel to see the loads · ${area}`
       : `<b>${{ flown: 'Hanging weight', ground: 'Weight on the base' }[m]} ${fmtKg(c.weight)}</b> · ${fmtInt(k.kgPerM)} kg per metre ${along} · heaviest column ${fmtKg(c.heaviestCol.kg)}${m === 'ground' ? ` (${k.tallest.cabinets} cabinet${k.tallest.cabinets === 1 ? '' : 's'} high)` : ''} · centre of gravity ${fmtM(k.cog, 2)} m above the floor · ${area}`;
-    if (m === 'ground') t += `<br>${c.cols} ground beam${c.cols === 1 ? '' : 's'} with adjustable feet, ${groundSupports(c.W).length} rear supports (posts on H-frame bases) at both ends and about every 2 m`;
-    t += `<br>Build order: ${buildOrderText(m)}.<br><span style="color:var(--ink-3)">Cabinets only: ${m === 'flown' ? 'flying bars, chains' : 'ground beams, supports'}, cables and wind add to these. Have the rigging or structure designed and checked by a qualified person.</span>`;
+    if (m === 'ground') {
+      const L = groundLayout(s, c.cols), nH = L.filter((x) => x === 'H').length, nP = L.filter((x) => x === 'P').length;
+      t += `<br>${c.cols} ground beam${c.cols === 1 ? '' : 's'} with adjustable feet · behind: ${nH} H-frame${nH === 1 ? '' : 's'}${nP ? ` and ${nP} post${nP === 1 ? '' : 's'}` : ''}, ${fmtNum(groundFrameHeight(s, c), 2)} m high, on floor rails`;
+    }
+    t += `<br>Build order: ${buildOrderText(m)}.<br><span style="color:var(--ink-3)">Cabinets only: ${m === 'flown' ? 'flying bars, chains' : 'ground beams, H-frames'}, cables and wind add to these. Have the rigging or structure designed and checked by a qualified person.</span>`;
     return t;
   },
   data(s, c) {
@@ -5277,6 +5320,7 @@ function setPath(obj, path, val) { const ks = path.split('.'); let o = obj; for 
 function parseField(el, final) {
   const t = el.dataset.type || 'str';
   if (t === 'str') return el.value;
+  if (t === 'numopt' && String(el.value).trim() === '') return null;   // empty = automatic
   const v = parseFloat(String(el.value).replace(',', '.'));
   if (!Number.isFinite(v)) return undefined;
   let out = t === 'int' ? Math.round(v) : v;
@@ -5455,6 +5499,17 @@ function bindAll() {
       if (path === 'sizeMode' && v !== s.sizeMode) { switchSizeMode(s, v); return; }
       change(() => setPath(s, path, v), { structural: true }); return;
     }
+    const jt = e.target.closest('[data-joint]');
+    if (jt) {
+      // H-frame -> post -> nothing -> H-frame; a joint that matches the pattern again loses its change
+      const j = +jt.dataset.joint, next = { H: 'P', P: '-', '-': 'H' }[jt.dataset.v] || 'H', cols = S.comps[s.id].cols;
+      change(() => {
+        s.gs = Object.assign(defaultGroundStack(), s.gs || {}); s.gs.over = Object.assign({}, s.gs.over);
+        const base = groundLayout(Object.assign({}, s, { gs: Object.assign({}, s.gs, { over: {} }) }), cols)[j];
+        if (next === base) delete s.gs.over[j]; else s.gs.over[j] = next;
+      }, { key: `gs:${s.id}` });
+      return;
+    }
     const corner = e.target.closest('[data-corner-v]');
     if (corner) { change(() => { s.data.start = corner.dataset.cornerV; }, { structural: true }); return; }
     const sg = e.target.closest('[data-sugg]');
@@ -5468,9 +5523,14 @@ function bindAll() {
     if (a === 'panel-keep') { const p = getPanel(S.project, s.panel); Lib.upsert(normalizePanel(p)); toast(`Added ${p.name} to your panels`); }
     if (a === 'panel-update') { const lp = Lib.find(s.panel); if (lp) { change((pp) => { pp.catalog = pp.catalog.map((c) => (c.id === lp.id ? deepClone(lp) : c)); }, { structural: true }); toast(`Updated ${lp.name} in this project`, { label: 'Undo', run: undo }); } }
     if (a === 'holes-clear') change(() => { s.holes = []; }, { structural: false });
+    if (a === 'gs-reset') change(() => { s.gs = Object.assign(defaultGroundStack(), s.gs || {}, { over: {} }); }, { structural: false });
     if (a === 'settings') settingsModal();
   });
   $('#cfg').addEventListener('toggle', (e) => { if (e.target.id === 'sugg-details') S.suggOpen = e.target.open; }, true);
+  $('#cfg').addEventListener('change', (e) => {
+    const s = active(); if (!s || !e.target.dataset || e.target.dataset.gs !== 'posts') return;
+    change(() => { s.gs = Object.assign(defaultGroundStack(), s.gs || {}, { posts: e.target.checked }); });
+  });
   // plan clicks: toggle holes
   $('#plan-svg').addEventListener('click', (e) => {
     if (planMode() !== 'cabinets') return;

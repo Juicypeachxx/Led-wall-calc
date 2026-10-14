@@ -73,17 +73,28 @@ const KINDS = {
    with outriggers and is built from the bottom row up. */
 const MOUNTS = {
   flown: { label: 'Flown', long: 'Flown (hung from flying bars)' },
-  ground: { label: 'Ground stack', long: 'Ground stack (on ground beams, with rear supports)' },
+  ground: { label: 'Ground stack', long: 'Ground stack (on ground beams, with H-frames behind)' },
 };
 const MOUNT_ORDER = ['flown', 'ground'];
-// A ground stack as built with portable ground-stack systems: the cabinets stand on ground beams, one per
-// cabinet column, each on two adjustable feet; behind the screen an upright support post stands on an
-// H-shaped floor frame with levelling feet, at both ends (ladder frames there) and about every 2 m between.
-// Returns where the supports go, in mm along the (developed) screen width.
-function groundSupports(W) {
-  const n = Math.max(2, Math.round(W / 2000) + 1), edge = Math.min(100, W / 4);
-  return Array.from({ length: n }, (_, i) => edge + (W - 2 * edge) * i / (n - 1));
+// A ground stack as built with portable ground-stack systems (after photos of the user's own): the cabinets
+// stand on ground beams, one per cabinet column, on adjustable feet. Behind the screen, at the joints between
+// beams (0 = left end, cols = right end), stand H-frames: a ladder (two uprights with rungs) on a pair of floor
+// rails running back from the screen, clamped to the cabinets; optionally single posts on the same rails between
+// them. Per screen (s.gs): an H-frame every `every` beams (always at both ends), posts at the joints between
+// or not, the frame height (null = 0.3 m above the screen), and per-joint changes on top ('H', 'P' or '-').
+function defaultGroundStack() { return { every: 1, posts: false, height: null, over: {} }; }
+function groundLayout(s, cols) {
+  const g = s.gs || defaultGroundStack(), every = clamp(int(g.every, 1), 1, 200), out = [];
+  for (let j = 0; j <= cols; j++) out.push(j % every === 0 || j === cols ? 'H' : g.posts ? 'P' : '-');
+  for (const [k, v] of Object.entries(g.over || {})) { const j = int(k, -1); if (j >= 0 && j <= cols && (v === 'H' || v === 'P' || v === '-')) out[j] = v; }
+  return out;
 }
+// height of the frames and posts above the floor, metres
+function groundFrameHeight(s, comp) {
+  const g = s.gs || {};
+  return g.height > 0 ? g.height : (num(s.y) + comp.H) / 1000 + 0.3;
+}
+function groundFrames(cols, colW) { return Array.from({ length: cols + 1 }, (_, i) => i * colW); }
 function buildOrderText(mount) {
   return mount === 'flown'
     ? 'top row first, left to right, then each row below (a flown screen is hung from the top down)'
@@ -127,6 +138,7 @@ function defaultScreen(kind = 'free') {
     shape: k.shape || 'flat', angle: k.angle || 5,
     holes: [],
     data: { dir: 'h', start: 'bl', path: 'snake', split: 'lines' },
+    gs: defaultGroundStack(),
   };
 }
 
@@ -200,6 +212,9 @@ function normalizeProject(raw) {
     s.mount = rs.mount === 'back' ? 'ground' : MOUNTS[rs.mount] ? rs.mount : (s.y > 0 ? 'flown' : 'ground');
     s.angle = clamp(num(s.angle, 5), 0.5, 45);
     s.holes = Array.isArray(s.holes) ? s.holes.filter((k) => typeof k === 'string' && /^\d+,\d+$/.test(k)).slice(0, 20000) : [];
+    const g = s.gs && typeof s.gs === 'object' ? s.gs : {};
+    s.gs = { every: clamp(int(g.every, 1), 1, 200), posts: g.posts === true, height: num(g.height, 0) > 0 ? clamp(num(g.height), 0.3, 30) : null, over: {} };
+    if (g.over && typeof g.over === 'object') for (const [k, v] of Object.entries(g.over)) if (/^\d{1,3}$/.test(k) && (v === 'H' || v === 'P' || v === '-')) s.gs.over[k] = v;
     s.data = Object.assign({ dir: 'h', start: 'bl', path: 'snake', split: 'lines' }, s.data || {});
     if (!['h', 'v'].includes(s.data.dir)) s.data.dir = 'h';
     if (!['bl', 'br', 'tl', 'tr'].includes(s.data.start)) s.data.start = 'bl';
@@ -715,9 +730,11 @@ function packingList(project, comps, plan) {
     const sel = grounds.filter(({ c }) => c.colW === w), parts = sel.map(({ s, c }) => ({ name: s.name, n: c.cols }));
     items.push({ group: 'Rigging', item: `Ground beam ${+w.toFixed(1)} mm with 2 adjustable feet (one per cabinet column)`, qty: sum(parts, (x) => x.n), parts, note: 'the cabinets stand on these' });
   }
-  if (grounds.length) {
-    const parts = grounds.map(({ s, c }) => ({ name: s.name, n: groundSupports(c.W).length, label: `${groundSupports(c.W).length} for ${fmtNum(c.H / 1000, 2)} m high` }));
-    items.push({ group: 'Rigging', item: 'Rear support: upright post on an H-frame base with levelling feet', qty: sum(parts, (x) => x.n), parts, note: 'at both ends and about every 2 m; number and post height as the ground-stack system requires' });
+  // H-frames and posts behind the screen, as laid out per screen (see groundLayout)
+  for (const [kind, item, note] of [['H', 'H-frame: ladder on a pair of floor rails', 'clamped to the cabinets at the joints between ground beams'],
+    ['P', 'Post on a pair of floor rails (between H-frames)', 'clamped to the cabinets']]) {
+    const parts = grounds.map(({ s, c }) => { const n = groundLayout(s, c.cols).filter((x) => x === kind).length; return { name: s.name, n, label: `${fmtInt(n)} × ${fmtNum(groundFrameHeight(s, c), 2)} m high` }; }).filter((x) => x.n);
+    if (parts.length) items.push({ group: 'Rigging', item, qty: sum(parts, (x) => x.n), parts, note });
   }
   // power
   if (list.length && list.every(({ c }) => c.power)) {
@@ -792,5 +809,5 @@ if (typeof module !== 'undefined') {
   module.exports = { BUILTIN_PANELS, KINDS, CONTROLLERS, computeScreen, computeTotals, suggest169, exampleProject, blankProject, normalizeProject,
     ratioInfo, splitLines, orderLines, facetTransforms, colLetter, slug, fmtInt, fmtM, fmtSize, getPanel, defaultScreen, placeNewScreen, holesInGrid, defaultSettings,
     planControllers, assignControllers, packingList, chainLinks, MOUNTS, MOUNT_ORDER, buildOrderText, packQty, packPart,
-    normalizePanel, panelName, panelKey, panelIdFor, samePanel, sheetField, sheetNum, panelsFromTable, findPanel, KIND_ORDER, groundSupports };
+    normalizePanel, panelName, panelKey, panelIdFor, samePanel, sheetField, sheetNum, panelsFromTable, findPanel, KIND_ORDER, groundFrames, groundLayout, groundFrameHeight, defaultGroundStack };
 }

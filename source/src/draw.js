@@ -276,7 +276,7 @@ function drawStage(pen, v) {
       const colPx = sw / comp.cols, fw = Math.max(thin * 2.5, Math.min(fs * 0.3, colPx * 0.18)), fh = bh + fs * 0.22;
       const xs = colPx >= fs * 0.9
         ? Array.from({ length: comp.cols }, (_, c) => [sx + c * colPx + colPx * 0.12, sx + (c + 1) * colPx - colPx * 0.12 - fw]).flat()
-        : groundSupports(comp.W).map((u) => sx + u * s - fw / 2);
+        : ((n) => Array.from({ length: n }, (_, i) => sx + (sw - fw) * i / (n - 1)))(Math.max(2, Math.round(comp.W / 2000) + 1));
       for (const x of xs) pen.rect(x, sy + sh - fh, fw, fh, { fill: mk });
     }
     if (v.interactive) pen.rect(sx, sy, sw, sh, { fill: '#000', opacity: 0, attrs: { 'data-sid': sc.id, class: 'hit' } });

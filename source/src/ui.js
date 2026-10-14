@@ -335,6 +335,7 @@ function renderCfg() {
   <div class="card"><div class="card-head"><h3><span class="step">5</span>Mounting</h3></div>
     <div class="card-body">
       <div class="seg full" data-seg="mount">${MOUNT_ORDER.map((k) => segBtn(k, MOUNTS[k].label, s.mount)).join('')}</div>
+      ${s.mount === 'ground' ? groundHtml(s) : ''}
       <div class="readout" data-ro="mount"></div>
     </div></div>`;
   refreshReadouts();
@@ -344,6 +345,14 @@ function ctrlSummary(pl) {
   let t = `Controller for the whole project: <b>${pl.count} × NovaStar ${esc(D.name)}</b>${pl.auto ? ' (suggested)' : ''} · ${pl.count === 1 ? `${outs} of ${D.ports} outputs` : `${fmtInt(outs)} outputs on ${pl.count} units${pl.count <= 4 ? ` (${pl.units.map((u) => u.used).join(' + ')})` : ''}`} · ${fmtNum(pl.pixels / 1e6, 2)} M px${pl.count === 1 ? ` of ${fmtNum(D.capacity / 1e6, 2)} M` : ''}`;
   if (pl.warnings.length) t += pl.warnings.map((w) => `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${esc(w)}</span></div>`).join('');
   return t;
+}
+// ground stack: H-frames every N beams, optional posts between, frame height, and per-joint changes (RO.joints)
+function groundHtml(s) {
+  const g = s.gs || defaultGroundStack();
+  return `<div class="row2">${numField('cf-gs-every', 'H-frame every', 'gs.every', g.every, { type: 'int', min: 1, max: 200, step: 1, unit: g.every === 1 ? 'beam' : 'beams' })}
+      <label class="fld"><span>Frame height</span><div class="unit-in"><input type="number" id="cf-gs-height" data-bind="gs.height" data-type="numopt" min="0.3" max="30" step="0.1" value="${g.height ?? ''}" placeholder="auto"><i>m</i></div></label></div>
+    <label class="chk"><input type="checkbox" data-gs="posts"${g.posts ? ' checked' : ''}> Posts between the H-frames</label>
+    <div data-ro="joints"></div>`;
 }
 function deltaTxt(d) { if (Math.abs(d) < 0.5) return 'exact'; return `${d > 0 ? '+' : '−'}${fmtNum(Math.abs(d) / 1000, 3)} m`; }
 function shortName(p) { return p.name.replace(/^Generic /, ''); }
@@ -388,6 +397,14 @@ const RO = {
       : '<div class="desc" style="color:var(--ink-3)">In the Cabinets plan, click a cabinet to leave its position empty.</div>';
   },
   warn(s, c) { return c.warnings.map((w) => `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${esc(w)}</span></div>`).join(''); },
+  joints(s, c) {
+    if (s.mount !== 'ground') return '';
+    const L = groundLayout(s, c.cols), sym = { H: 'H', P: '|', '-': '·' }, what = { H: 'H-frame', P: 'post', '-': 'nothing' };
+    const where = (j) => (j === 0 ? 'left end' : j === c.cols ? 'right end' : `between ${colLetter(j - 1)} and ${colLetter(j)}`);
+    const custom = Object.keys((s.gs && s.gs.over) || {}).length;
+    return `<div class="jt-row" role="group" aria-label="Joints from left to right">${L.map((v, j) => `<button class="jt" data-joint="${j}" data-v="${v}" title="Joint ${where(j)}: ${what[v]}" aria-label="Joint ${where(j)}: ${what[v]}">${sym[v]}</button>`).join('')}</div>
+      <div class="desc">The joints between ground beams, left to right: H = H-frame, | = post, · = nothing. Tap one to change it.${custom ? ` <button class="linkbtn" data-act="gs-reset">Back to the pattern</button>` : ''}</div>`;
+  },
   mount(s, c) {
     const k = c.support, m = k.mount;
     const along = { flown: 'along the flying bars', ground: 'along the base beams' }[m];
@@ -395,8 +412,11 @@ const RO = {
     let t = c.weight === null
       ? `Add a weight to the panel to see the loads · ${area}`
       : `<b>${{ flown: 'Hanging weight', ground: 'Weight on the base' }[m]} ${fmtKg(c.weight)}</b> · ${fmtInt(k.kgPerM)} kg per metre ${along} · heaviest column ${fmtKg(c.heaviestCol.kg)}${m === 'ground' ? ` (${k.tallest.cabinets} cabinet${k.tallest.cabinets === 1 ? '' : 's'} high)` : ''} · centre of gravity ${fmtM(k.cog, 2)} m above the floor · ${area}`;
-    if (m === 'ground') t += `<br>${c.cols} ground beam${c.cols === 1 ? '' : 's'} with adjustable feet, ${groundSupports(c.W).length} rear supports (posts on H-frame bases) at both ends and about every 2 m`;
-    t += `<br>Build order: ${buildOrderText(m)}.<br><span style="color:var(--ink-3)">Cabinets only: ${m === 'flown' ? 'flying bars, chains' : 'ground beams, supports'}, cables and wind add to these. Have the rigging or structure designed and checked by a qualified person.</span>`;
+    if (m === 'ground') {
+      const L = groundLayout(s, c.cols), nH = L.filter((x) => x === 'H').length, nP = L.filter((x) => x === 'P').length;
+      t += `<br>${c.cols} ground beam${c.cols === 1 ? '' : 's'} with adjustable feet · behind: ${nH} H-frame${nH === 1 ? '' : 's'}${nP ? ` and ${nP} post${nP === 1 ? '' : 's'}` : ''}, ${fmtNum(groundFrameHeight(s, c), 2)} m high, on floor rails`;
+    }
+    t += `<br>Build order: ${buildOrderText(m)}.<br><span style="color:var(--ink-3)">Cabinets only: ${m === 'flown' ? 'flying bars, chains' : 'ground beams, H-frames'}, cables and wind add to these. Have the rigging or structure designed and checked by a qualified person.</span>`;
     return t;
   },
   data(s, c) {
@@ -740,6 +760,7 @@ function setPath(obj, path, val) { const ks = path.split('.'); let o = obj; for 
 function parseField(el, final) {
   const t = el.dataset.type || 'str';
   if (t === 'str') return el.value;
+  if (t === 'numopt' && String(el.value).trim() === '') return null;   // empty = automatic
   const v = parseFloat(String(el.value).replace(',', '.'));
   if (!Number.isFinite(v)) return undefined;
   let out = t === 'int' ? Math.round(v) : v;
@@ -918,6 +939,17 @@ function bindAll() {
       if (path === 'sizeMode' && v !== s.sizeMode) { switchSizeMode(s, v); return; }
       change(() => setPath(s, path, v), { structural: true }); return;
     }
+    const jt = e.target.closest('[data-joint]');
+    if (jt) {
+      // H-frame -> post -> nothing -> H-frame; a joint that matches the pattern again loses its change
+      const j = +jt.dataset.joint, next = { H: 'P', P: '-', '-': 'H' }[jt.dataset.v] || 'H', cols = S.comps[s.id].cols;
+      change(() => {
+        s.gs = Object.assign(defaultGroundStack(), s.gs || {}); s.gs.over = Object.assign({}, s.gs.over);
+        const base = groundLayout(Object.assign({}, s, { gs: Object.assign({}, s.gs, { over: {} }) }), cols)[j];
+        if (next === base) delete s.gs.over[j]; else s.gs.over[j] = next;
+      }, { key: `gs:${s.id}` });
+      return;
+    }
     const corner = e.target.closest('[data-corner-v]');
     if (corner) { change(() => { s.data.start = corner.dataset.cornerV; }, { structural: true }); return; }
     const sg = e.target.closest('[data-sugg]');
@@ -931,9 +963,14 @@ function bindAll() {
     if (a === 'panel-keep') { const p = getPanel(S.project, s.panel); Lib.upsert(normalizePanel(p)); toast(`Added ${p.name} to your panels`); }
     if (a === 'panel-update') { const lp = Lib.find(s.panel); if (lp) { change((pp) => { pp.catalog = pp.catalog.map((c) => (c.id === lp.id ? deepClone(lp) : c)); }, { structural: true }); toast(`Updated ${lp.name} in this project`, { label: 'Undo', run: undo }); } }
     if (a === 'holes-clear') change(() => { s.holes = []; }, { structural: false });
+    if (a === 'gs-reset') change(() => { s.gs = Object.assign(defaultGroundStack(), s.gs || {}, { over: {} }); }, { structural: false });
     if (a === 'settings') settingsModal();
   });
   $('#cfg').addEventListener('toggle', (e) => { if (e.target.id === 'sugg-details') S.suggOpen = e.target.open; }, true);
+  $('#cfg').addEventListener('change', (e) => {
+    const s = active(); if (!s || !e.target.dataset || e.target.dataset.gs !== 'posts') return;
+    change(() => { s.gs = Object.assign(defaultGroundStack(), s.gs || {}, { posts: e.target.checked }); });
+  });
   // plan clicks: toggle holes
   $('#plan-svg').addEventListener('click', (e) => {
     if (planMode() !== 'cabinets') return;
