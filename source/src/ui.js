@@ -11,7 +11,7 @@ const S = {
   view: { s: 0.05, tx: 0, ty: 0, fitted: false },
   undo: [], redo: [], lastSnap: '', lastKey: '', lastTime: 0,
   pal: {}, dark: true, guides: [],
-  saveTimer: 0, pristine: true, lastSetId: '', suggOpen: false,
+  saveTimer: 0, pristine: true, fresh: false, lastSetId: '', suggOpen: false,
 };
 
 /* ---------- toasts ---------- */
@@ -47,8 +47,9 @@ const planMode = () => (PF.mode === 'simple' && PF.planMode === 'power' ? 'data'
 const faceMode = () => (PF.mode === 'simple' && PF.face === 'power' ? 'cabinets' : PF.face);
 
 /* ---------- project lifecycle ---------- */
-function setProject(p, { keepView = false } = {}) {
-  S.project = p; S.undo = []; S.redo = []; S.lastSnap = JSON.stringify(p); S.lastKey = '';
+// fresh: a new, empty project that has not been saved yet (it is saved on the first change)
+function setProject(p, { keepView = false, fresh = false } = {}) {
+  S.project = p; S.undo = []; S.redo = []; S.lastSnap = JSON.stringify(p); S.lastKey = ''; S.fresh = fresh;
   S.activeId = p.screens[0] ? p.screens[0].id : null;
   S.selection = new Set(S.activeId ? [S.activeId] : []);
   S.pristine = true;
@@ -69,7 +70,7 @@ function change(fn, { key = '', structural = false, history = true } = {}) {
   fn(S.project);
   S.project.updated = new Date().toISOString();
   if (S.project.example) delete S.project.example;
-  S.pristine = false;
+  S.pristine = false; S.fresh = false;
   recompute();
   let pruned = false;
   for (const s of S.project.screens) {
@@ -121,6 +122,7 @@ function updateSavePill() {
   const st = Store.state, mode = Store.mode();
   let s = st, txt;
   if (S.project && S.project.example && S.pristine) { s = 'idle'; txt = 'Example project. Your changes save automatically'; }
+  else if (S.project && S.fresh && S.pristine && st !== 'error' && st !== 'off') { s = 'idle'; txt = mode === 'cloud' ? 'Saves to your account as soon as you change something' : mode === 'local' ? 'Saves in this browser as soon as you change something' : 'Not saved'; }
   else if (st === 'saving') txt = 'Saving…';
   else if (st === 'saved') txt = 'Saved to your account';
   else if (st === 'local') txt = mode === 'cloud' ? 'Saved' : 'Saved in this browser';
@@ -155,6 +157,7 @@ function fitStage() {
   S.view.fitted = true; S.view.touched = false;
 }
 function renderStage() {
+  const empty = $('#stage-empty'); if (empty) empty.hidden = S.project.screens.length > 0;
   const svg = $('#stage-svg'); const { w, h } = stageSize(); if (w < 20 || h < 20) return;
   if (!S.view.fitted) fitStage();
   const pen = new SvgPen();
@@ -396,7 +399,7 @@ function planPx(c, w, fs, dims, labels) {
 }
 function renderPlan() {
   const s = active(); const wrap = $('#plan-wrap'), svg = $('#plan-svg'), lg = $('#plan-legend');
-  if (!s || !S.comps[s.id]) { svg.innerHTML = ''; lg.innerHTML = ''; return; }
+  if (!s || !S.comps[s.id]) { svg.innerHTML = ''; lg.innerHTML = '<div class="sum">Add a screen to see its plan.</div>'; return; }
   const c = S.comps[s.id]; const mode = planMode();
   $$('#plan-seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.plan === mode)));
   const w = Math.max(240, wrap.clientWidth);
@@ -436,7 +439,7 @@ function addScreen(kind) {
     p.screens.push(s);
     if (kind === 'dj') { s.x = 0; s.y = 0; s.z = 2000; }
     else if (kind === 'banner' && first) { s.x = first.x; s.y = Math.round((first.y + fc.H + 300) / 50) * 50; }
-    else { placeNewScreen(p, s, comp); if (kind === 'side' && first) s.y = Math.max(0, Math.round((first.y + fc.H - comp.H) / 50) * 50); }
+    else { placeNewScreen(p, s, comp); if (kind === 'side' && first) s.y = Math.max(0, Math.round((first.y + fc.H - comp.H) / 50) * 50); if (kind === 'main' && !first) s.y = 1000; }
     S.activeId = s.id; S.selection = new Set([s.id]);
   }, { structural: true });
   S.view.fitted = false; renderStage();
@@ -466,12 +469,11 @@ function duplicateScreen(id, mirrored = false) {
 function deleteScreens(ids) {
   const list = ids.map(findScreen).filter(Boolean);
   if (!list.length) return;
-  if (list.length >= S.project.screens.length) { toast('A project needs at least one screen.'); return; }
   const names = list.length === 1 ? list[0].name : `${list.length} screens`;
   change((p) => {
     p.screens = p.screens.filter((s) => !ids.includes(s.id));
-    if (!p.screens.some((s) => s.id === S.activeId)) S.activeId = p.screens[0].id;
-    S.selection = new Set([S.activeId]);
+    if (!p.screens.some((s) => s.id === S.activeId)) S.activeId = p.screens[0] ? p.screens[0].id : null;
+    S.selection = new Set(S.activeId ? [S.activeId] : []);
   }, { structural: true });
   toast(`Deleted ${names}`, { label: 'Undo', run: undo });
 }
@@ -676,6 +678,10 @@ function bindAll() {
   };
   pj('#pj-name', 'name'); pj('#pj-client', 'client'); pj('#pj-rev', 'revision');
   $('#btn-new').onclick = newProject; $('#btn-open').onclick = openProjectsModal; $('#btn-dup').onclick = duplicateProject;
+  // empty stage: one tap adds a first screen, or opens the example project
+  $('#empty-kinds').innerHTML = KIND_ORDER.map((k) => { const d = KINDS[k], pn = getPanel(null, d.panel); return `<button class="chip" data-kind="${k}"><b>${d.label}</b><span>${d.cols} × ${d.rows} · ${fmtSize(d.cols * pn.w, d.rows * pn.h)}</span></button>`; }).join('');
+  $('#empty-kinds').addEventListener('click', (e) => { const b = e.target.closest('[data-kind]'); if (b) addScreen(b.dataset.kind); });
+  $('#btn-example').onclick = openExample;
   $('#btn-import').onclick = () => $('#file-import').click();
   $('#file-import').addEventListener('change', importFile);
   $('#btn-settings').onclick = settingsModal;
@@ -802,14 +808,16 @@ async function openProjectsModal() {
   await flushSave();
   const list = await Store.list();
   const mode = Store.mode();
+  const exampleLink = '<div style="margin-top:12px"><button class="linkbtn" data-example>Open the example project</button></div>';
+  m.body.addEventListener('click', (e) => { if (e.target.closest('[data-example]')) { m.close(); openExample(); } });
   if (!list.length) {
-    m.body.innerHTML = `<div class="empty">No saved projects yet. Projects save automatically once you change something${mode === 'none' ? ', but this browser is blocking storage, so use Export › Project file to keep your work' : ''}. You can also Import a project file.</div>`;
+    m.body.innerHTML = `<div class="empty">No saved projects yet. Projects save automatically once you change something${mode === 'none' ? ', but this browser is blocking storage, so use Export › Project file to keep your work' : ''}. You can also Import a project file.</div>${exampleLink}`;
     return;
   }
   m.body.innerHTML = `<div class="desc">${mode === 'cloud' ? 'Projects saved to your account. They follow you to any device where you open this planner.' : 'Projects saved in this browser.'}</div>
     <div class="plist">${list.map((x) => `<div class="prow${x.id === S.project.id ? ' current' : ''}" data-id="${esc(x.id)}">
       <div><div class="t">${esc(x.name || 'Untitled')}</div><div class="m">${[x.client, x.revision ? 'Rev ' + x.revision : '', `${x.screens || 0} screen${x.screens === 1 ? '' : 's'}`, `${fmtInt(x.cabinets || 0)} cabinets`, relTime(x.updated), x.where === 'browser' && mode === 'cloud' ? 'this browser only' : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
-      <div class="b">${x.id === S.project.id ? '<span class="m">Open now</span>' : '<button class="btn sm" data-open>Open</button><button class="btn sm danger" data-del>Delete</button>'}</div></div>`).join('')}</div>`;
+      <div class="b">${x.id === S.project.id ? '<span class="m">Open now</span>' : '<button class="btn sm" data-open>Open</button><button class="btn sm danger" data-del>Delete</button>'}</div></div>`).join('')}</div>${exampleLink}`;
   m.body.addEventListener('click', async (e) => {
     const row = e.target.closest('.prow'); if (!row) return; const id = row.dataset.id;
     if (e.target.closest('[data-open]')) {
@@ -827,9 +835,14 @@ async function openProjectsModal() {
 }
 async function newProject() {
   await flushSave();
-  const p = blankProject();
-  setProject(p); S.pristine = false; renderAll(); saveNow();
+  // saved once something is added or changed, so empty projects don't pile up in Open
+  setProject(blankProject(), { fresh: true }); renderAll();
   toast('Started a new project');
+}
+async function openExample() {
+  await flushSave();
+  setProject(exampleProject()); renderAll();
+  toast('Opened the example project. Your changes to it save as a project of your own.');
 }
 async function duplicateProject() {
   await flushSave();
@@ -1007,7 +1020,7 @@ async function exportLayoutPNG() {
   await Downloads.save(`${slug(S.project.name)}_layout.png`, await canvasToBlob(cv));
 }
 async function exportPlanPNG() {
-  const s = active(); if (!s) return; const c = S.comps[s.id]; const mode = planMode();
+  const s = active(); if (!s) { toast('Add a screen first.'); return; } const c = S.comps[s.id]; const mode = planMode();
   const W = 2400, fs = 30; const top = 110;
   const ph = clamp(planPx(c, W - 80, fs, true, true), 500, 3200);
   const H = Math.round(top + ph + 40);
@@ -1019,7 +1032,7 @@ async function exportPlanPNG() {
   await Downloads.save(`${slug(S.project.name)}_${slug(s.name)}_${mode}.png`, await canvasToBlob(cv));
 }
 async function exportPixelMap() {
-  const s = active(); if (!s) return; const c = S.comps[s.id];
+  const s = active(); if (!s) { toast('Add a screen first.'); return; } const c = S.comps[s.id];
   if (c.resW > 16384 || c.resH > 16384 || c.resW * c.resH > 100e6) { toast('This screen is too large for a single pixel map image.'); return; }
   const cv = document.createElement('canvas');
   drawPixelMap(cv, c, S.project);
@@ -1089,8 +1102,9 @@ function start(hot) {
   let p = null;
   if (hot && hot.project) { try { p = normalizeProject(hot.project); } catch (e) { p = null; } }
   if (!p) { const lastId = Store.localLast(); p = lastId ? Store.localLoad(lastId) : null; }
-  if (!p) p = exampleProject();
-  setProject(p);
+  const fresh = !p;
+  if (fresh) p = blankProject();
+  setProject(p, { fresh });
   if (hot && hot.activeId && findScreen(hot.activeId)) { S.activeId = hot.activeId; S.selection = new Set([hot.activeId]); }
   bindAll();
   renderAll();
@@ -1106,8 +1120,8 @@ function start(hot) {
         if (cp && S.pristine) {
           if (cp.id !== S.project.id || String(cp.updated) > String(S.project.updated)) { setProject(cp); S.lastSetId = cp.id; renderAll(); }
           else if (String(cp.updated) < String(S.project.updated)) Store.save(S.project);
-        } else if (!cp && S.pristine && !S.project.example) Store.save(S.project);
-      } else if (!S.project.example) {
+        } else if (!cp && S.pristine && !S.project.example && !S.fresh) Store.save(S.project);
+      } else if (!S.project.example && !S.fresh) {
         // first visit with an account: keep this browser's project there too
         Store.save(S.project); S.lastSetId = S.project.id; Store.setLast(S.project.id);
       }

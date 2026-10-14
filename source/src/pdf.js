@@ -357,8 +357,9 @@ async function buildPdfReport(project, comps, totals, opts) {
   });
 
   /* ---- packing list ---- */
-  if (st.reportPacking !== false) {
-    const items = packingList(project, comps, plan);
+  const packItems = st.reportPacking !== false ? packingList(project, comps, plan) : [];
+  if (packItems.length) {
+    const items = packItems;
     const pc = [{ key: 'group', label: 'Group', w: 17 }, { key: 'pk', label: 'Packed', w: 13 }, { key: 'ld', label: 'Loaded', w: 13 }, { key: 'qty', label: 'Qty', w: 12, align: 'right' },
       { key: 'item', label: 'Item', w: 86 }, { key: 'per', label: 'Per screen', w: 80 }, { key: 'note', label: 'Note', w: 52 }];
     const size = 2.4, lh = 3.1, HEAD = 5.6;

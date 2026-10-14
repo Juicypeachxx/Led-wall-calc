@@ -117,6 +117,12 @@ textarea { min-height: 70px; resize: vertical; }
 .stage-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; }
 .stage-wrap { position: relative; height: 430px; background: var(--canvas); overflow: hidden; touch-action: none; cursor: grab; border-radius: 0 0 0 0; }
 .stage-wrap.panning { cursor: grabbing; }
+.stage-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; pointer-events: none; }
+.stage-empty-card { pointer-events: auto; cursor: default; max-width: 460px; max-height: 100%; overflow: auto; background: var(--surface); border: 1px solid var(--line-2); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; }
+.stage-empty-card > b { font-size: 16px; color: var(--ink); }
+.stage-empty-card > span { color: var(--ink-2); font-size: 13px; line-height: 1.4; }
+.stage-empty-card .linkbtn { align-self: flex-start; }
+.stage-empty-card .chip b { font-family: var(--font-ui); font-weight: 600; font-size: 14px; }
 .stage-wrap svg { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-select: none; }
 .stage-wrap .hit { cursor: move; }
 .stage-wrap svg *:not(.hit) { pointer-events: none; }
@@ -260,5 +266,10 @@ details.more > div { margin-top: 8px; }
   .row3 { grid-template-columns: 1fr 1fr; }
   .tile .v { font-size: 20px; }
   .menu { position: fixed; left: 16px; right: 16px; top: auto; bottom: 16px; min-width: 0; }
+  .stage-empty { padding: 8px; }
+  .stage-empty-card { padding: 12px 14px; gap: 8px; }
+  .stage-empty-card > b { font-size: 15px; }
+  .stage-empty-card .chips { display: grid; grid-template-columns: 1fr 1fr; }
+  .stage-empty-card .chip b { font-size: 13px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

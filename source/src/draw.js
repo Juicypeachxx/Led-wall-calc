@@ -415,6 +415,7 @@ function fitStageView(project, comps, box, fs, measurePen, o = {}) {
     const tx0 = box.x + pad.l + (box.w - pad.l - pad.r - (b.x1 - b.x0) * s) / 2 - b.x0 * s;
     const ty0 = box.y + pad.t + (box.h - pad.t - pad.b - (b.y1 - b.y0) * s) / 2 + b.y1 * s;
     const e = drawStage(nul, Object.assign({}, o, { project, comps, fs, s, tx: tx0, ty: ty0, box: big, grid: false, selection: null, guides: null, interactive: false }));
+    if (!Number.isFinite(e.x0)) break;   // nothing drawn (no screens): keep the plain fit
     pad = { l: tx0 + b.x0 * s - e.x0 + margin, r: e.x1 - (tx0 + b.x1 * s) + margin, t: ty0 - b.y1 * s - e.y0 + margin, b: e.y1 - (ty0 - b.y0 * s) + margin };
     const ns = Math.max(floorS, scaleFor(pad));
     const done = Math.abs(ns - s) <= s * 0.01;

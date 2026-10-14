@@ -92,7 +92,16 @@
           <label class="chk"><input type="checkbox" id="lay-dims"> Dimensions</label>
         </div>
       </div>
-      <div class="stage-wrap" id="stage-wrap"><svg id="stage-svg" role="img" aria-label="Stage layout, front view"></svg></div>
+      <div class="stage-wrap" id="stage-wrap"><svg id="stage-svg" role="img" aria-label="Stage layout, front view"></svg>
+        <div class="stage-empty" id="stage-empty" hidden>
+          <div class="stage-empty-card">
+            <b>No screens yet</b>
+            <span>Pick the first screen to add. Its size, cabinets and position can all be changed afterwards.</span>
+            <div class="chips" id="empty-kinds"></div>
+            <button class="linkbtn" id="btn-example">Or open the example project</button>
+          </div>
+        </div>
+      </div>
       <div class="card-foot">Drag a screen to move it. Shift-click selects several. Scroll or pinch to zoom, drag empty space to pan. Hold Alt while dragging to skip snapping. Screens are drawn flat (developed); yaw, depth and curves show in the 3D view. A bar with chains on top marks a flown screen, a bar underneath a ground stack, a dashed frame a back construction.</div>
     </div>
     <div class="card">

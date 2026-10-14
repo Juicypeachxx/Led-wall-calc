@@ -123,12 +123,11 @@ function defaultScreen(kind = 'free') {
   };
 }
 
+// a new project starts with an empty stage; screens are added from "Add screen"
 function blankProject() {
-  const s = defaultScreen('main');
-  s.name = 'Main screen'; s.cols = 8; s.rows = 4; s.panel = 'g50100-39'; s.y = 1000;
   return { v: VERSION, id: uid('p-'), name: 'Untitled project', client: '', revision: 'A',
     created: new Date().toISOString(), updated: new Date().toISOString(),
-    settings: defaultSettings(), catalog: [], screens: [s] };
+    settings: defaultSettings(), catalog: [], screens: [] };
 }
 
 function exampleProject() {

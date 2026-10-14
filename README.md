@@ -6,6 +6,10 @@ Plan LED video walls in the browser: cabinets and size, curved screens, data por
 
 It works on a computer, tablet or phone, in Chrome, Safari, Edge or Firefox. Once loaded it also works offline, and `index.html` can be downloaded and opened as a file on a computer.
 
+## Starting a project
+
+The planner opens with an empty stage. Pick the first screen (main, side, totem, banner, DJ booth front, arc or free), then change its size, cabinets and position, and add more screens with **Add screen**. **New** starts another empty project. The example festival stage is under **Open › Open the example project**.
+
 ## What it does
 
 - **Panels:** generic 500×500, 500×1000, 600×337.5, 640×480, 960×960 and 1000×1000 cabinets, or your own cabinets from their datasheet (size, pixels, weight, power).
@@ -21,7 +25,7 @@ It works on a computer, tablet or phone, in Chrome, Safari, Edge or Firefox. Onc
 
 ## Saving
 
-Projects save automatically in the browser you use, on that device. To move a project to another device or send it to someone, use **Export › Project file** and then **Import** on the other side.
+Projects save automatically in the browser you use, on that device, as soon as you change something, and the planner reopens the last project you worked on. To move a project to another device or send it to someone, use **Export › Project file** and then **Import** on the other side.
 
 ## Keep in mind
 
