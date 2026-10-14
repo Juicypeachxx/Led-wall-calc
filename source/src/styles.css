@@ -222,8 +222,7 @@ details.more > div { margin-top: 8px; }
 .legend { padding: 10px 12px 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
 .legend .sum { font-size: 13px; color: var(--ink-2); }
 .legend .sum b { color: var(--ink); }
-.lg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px 14px; }
-.lg-grid.wide { grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); }
+.lg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--lgw, 230px)), 1fr)); gap: 6px 14px; }
 .lg { display: grid; grid-template-columns: 12px auto 1fr auto; gap: 8px; align-items: center; font-size: 12.5px; min-width: 0; }
 .lg .dot { width: 12px; height: 12px; border-radius: 3px; }
 .lg .name { font-family: var(--font-cond); font-weight: 700; font-size: 14px; }

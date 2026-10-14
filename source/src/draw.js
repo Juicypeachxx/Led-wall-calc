@@ -222,14 +222,14 @@ function drawStage(pen, v) {
     pen.rect(box.x, top, box.w, box.y + box.h - top, { fill: pal.floorFill });
     if (fy >= box.y) {
       pen.line(box.x, fy, box.x + box.w, fy, { stroke: pal.floor, sw: v.print ? 0.4 : 1.5 });
-      pen.text('FLOOR ±0.00', box.x + fs * 0.6, fy + fs * 1.15, { size: fs * 0.7, fill: pal.ink3, font: 'cond', weight: 600, ls: v.print ? undefined : 0.8 });
+      pen.text(tr('FLOOR ±0.00'), box.x + fs * 0.6, fy + fs * 1.15, { size: fs * 0.7, fill: pal.ink3, font: 'cond', weight: 600, ls: v.print ? undefined : 0.8 });
     }
   }
   // centre line
   const clx = X(0);
   if (clx > box.x && clx < box.x + box.w) {
     pen.line(clx, box.y + fs * 1.6, clx, Math.min(fy, box.y + box.h), { stroke: pal.cl, sw: v.print ? 0.25 : 1, dash: v.print ? [2.4, 1.2, 0.6, 1.2] : [9, 4, 2, 4] });
-    pen.text('CL', clx, box.y + fs * 1.25, { size: fs * 0.72, fill: pal.ink3, font: 'cond', weight: 700, anchor: 'middle' });
+    pen.text(tr('CL'), clx, box.y + fs * 1.25, { size: fs * 0.72, fill: pal.ink3, font: 'cond', weight: 700, anchor: 'middle' });
   }
 
   // pass 1: screen bodies, back to front (higher Z is closer to the audience)
@@ -342,8 +342,8 @@ function drawStage(pen, v) {
     for (const sc of byArea) {
       const comp = comps[sc.id]; const { sx, sy, sw, sh, top } = rects.get(sc.id);
       const extra = [];
-      if (comp.curve) extra.push(`${comp.curve.shape === 'concave' ? 'curved in' : 'curved out'} ${fmtNum(comp.curve.arc, 1)}°`);
-      if (sc.yaw) extra.push(`yaw ${fmtNum(sc.yaw, 1)}°`);
+      if (comp.curve) { const a = fmtNum(comp.curve.arc, 1); extra.push(comp.curve.shape === 'concave' ? tr('curved in {a}°', { a }) : tr('curved out {a}°', { a })); }
+      if (sc.yaw) extra.push(tr('yaw {a}°', { a: fmtNum(sc.yaw, 1) }));
       if (sc.z) extra.push(`Z ${sc.z > 0 ? '+' : ''}${fmtM(sc.z, 2)} m`);
       const nameSize = fs * 0.92, metaSize = fs * 0.72;
       const meta = `${fmtSize(comp.W, comp.H)}${extra.length ? '  ·  ' + extra.join('  ·  ') : ''}`;
@@ -385,7 +385,7 @@ function drawStage(pen, v) {
   if (v.dims && project.screens.length > 1) {
     const b = stageBounds(project, comps);
     const yy = Y(0) + Math.max(fs * 2.7, lowest + fs * 1.6);
-    dimH(pen, X(b.x0), X(b.x1), yy, `Overall ${fmtM(b.x1 - b.x0)} m`, { color: pal.dim, text: pal.ink, sw: v.print ? 0.25 : 1, tick: fs * 0.25, gap: fs * 0.3, size: fs * 0.72, weight: 600 });
+    dimH(pen, X(b.x0), X(b.x1), yy, tr('Overall {m} m', { m: fmtM(b.x1 - b.x0) }), { color: pal.dim, text: pal.ink, sw: v.print ? 0.25 : 1, tick: fs * 0.25, gap: fs * 0.3, size: fs * 0.72, weight: 600 });
     grow({ x0: X(b.x0) - fs * 0.3, x1: X(b.x1) + fs * 0.3, y0: yy - fs, y1: yy + fs * 0.3 });
   }
 
@@ -459,7 +459,7 @@ function drawPixelMap(canvas, comp, project) {
   }
   // centre caption
   const s = comp.screen;
-  const t1 = s.name, t2 = `${comp.resW} × ${comp.resH} px  ·  ${comp.ports.length} port${comp.ports.length === 1 ? '' : 's'}`;
+  const t1 = s.name, t2 = `${comp.resW} × ${comp.resH} px  ·  ${trn(comp.ports.length, '{n} port', '{n} ports')}`;
   const size = clamp(Math.min(comp.resW, comp.resH) * 0.07, 12, 120);
   ctx.font = `700 ${size}px ${FONT_STACK.ui}`;
   const w1 = ctx.measureText(t1).width; ctx.font = `500 ${size * 0.55}px ${FONT_STACK.mono}`; const w2 = ctx.measureText(t2).width;

@@ -17,6 +17,49 @@ const rad = (d) => d * Math.PI / 180;
 const uid = (p = '') => p + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
 const deepClone = (o) => JSON.parse(JSON.stringify(o));
 
+/* ---------- language ----------
+   The planner is written in English. Other languages come from dictionaries keyed by the English text
+   (lang-sl.js adds Slovenian): tr('Add screen') gives the text in the current language, and {name}
+   placeholders are filled in after translating, so a translation can put them anywhere. trn() picks a
+   plural form: English has two (1, other), Slovenian four (1, 2, 3–4, other, by the last two digits),
+   kept as a list under the English singular. trc() is tr() for a word that needs another translation in
+   one place ('context::English' in the dictionary). Numbers follow the language too: 1,026.5 in English,
+   1.026,5 in Slovenian. */
+const LANGS = { en: 'English', sl: 'Slovenščina' };
+const DICT = {};
+const TR_MISSING = new Set();   // English texts asked for in another language that has no translation of them
+let LANG = 'en';
+function setLang(l) { LANG = LANGS[l] ? l : 'en'; return LANG; }
+function addLang(l, dict) { DICT[l] = Object.assign(DICT[l] || {}, dict); }
+function fillIn(t, vars) { return vars ? String(t).replace(/\{(\w+)\}/g, (m, k) => (vars[k] === undefined ? m : vars[k])) : t; }
+function lookup(key) {
+  if (LANG === 'en') return undefined;
+  const v = (DICT[LANG] || {})[key];
+  if (v === undefined) TR_MISSING.add(key);
+  return v;
+}
+function tr(en, vars) { const v = lookup(en); return fillIn(typeof v === 'string' ? v : en, vars); }
+function trc(ctx, en, vars) {
+  const v = LANG === 'en' ? undefined : (DICT[LANG] || {})[`${ctx}::${en}`];
+  return typeof v === 'string' ? fillIn(v, vars) : tr(en, vars);
+}
+function pluralIndex(n) {
+  const k = Math.abs(Math.trunc(n));
+  if (LANG === 'sl') { const h = k % 100; return h === 1 ? 0 : h === 2 ? 1 : h === 3 || h === 4 ? 2 : 3; }
+  return k === 1 ? 0 : 1;
+}
+// trn(3, '{n} screen', '{n} screens') -> '3 screens'; {n} is the number as the language writes it
+function trn(n, one, other, vars) {
+  const forms = lookup(one), all = Object.assign({ n: fmtInt(n) }, vars);
+  if (Array.isArray(forms)) return fillIn(forms[Math.min(pluralIndex(n), forms.length - 1)], all);
+  return fillIn(Math.abs(Math.trunc(n)) === 1 ? one : other, all);
+}
+// trn() for a counted word that takes other forms in one place: 'context::English singular' in the dictionary
+function trnc(ctx, n, one, other, vars) {
+  const forms = LANG === 'en' ? undefined : (DICT[LANG] || {})[`${ctx}::${one}`];
+  return Array.isArray(forms) ? fillIn(forms[Math.min(pluralIndex(n), forms.length - 1)], Object.assign({ n: fmtInt(n) }, vars)) : trn(n, one, other, vars);
+}
+
 /* ---------- colours ---------- */
 const SCREEN_COLORS = ['#5B6CFF', '#2FB59B', '#E58A3A', '#C058D6', '#3BA7E8', '#D9534F', '#8DBF3F', '#E2B93B'];
 const PORT_COLORS = ['#3B82F6', '#EF4444', '#22C55E', '#EAB308', '#D946EF', '#06B6D4', '#F97316', '#8B5CF6',
@@ -25,7 +68,14 @@ const CIRCUIT_COLORS = ['#F59E0B', '#10B981', '#6366F1', '#EF4444', '#06B6D4', '
   '#0EA5E9', '#D97706', '#14B8A6', '#E879F9'];
 
 /* ---------- panel catalog ---------- */
-function P(id, name, w, h, px, py, kg, wMax, wAvg) { return { id, name, w, h, px, py, kg, wMax, wAvg, builtin: true }; }
+// a preset's name ('Generic 500×500 P2.6', '... outdoor') is shown in the current language
+function P(id, name, w, h, px, py, kg, wMax, wAvg) {
+  const spec = name.replace(/^Generic /, '').replace(/ outdoor$/, ''), outdoor = / outdoor$/.test(name);
+  return { id, get name() { return tr('Generic {spec}', { spec: presetSpec(this) }); }, spec, outdoor, w, h, px, py, kg, wMax, wAvg, builtin: true };
+}
+function presetSpec(p) { return p.outdoor ? tr('{spec} outdoor', { spec: p.spec }) : p.spec; }
+// for short lists: a preset without the word "Generic"
+function panelShort(p) { return p.builtin ? presetSpec(p) : p.name; }
 // Generic presets. Weight and power are typical mid-range values for the class of cabinet
 // (real products vary, e.g. 7.5–11.5 kg and 160–200 W max for 500×500 rental cabinets);
 // replace them with your product's datasheet values via a custom panel.
@@ -54,17 +104,18 @@ function findPanel(project, id) {
 }
 function getPanel(project, id) { return findPanel(project, id) || BUILTIN_PANELS[3]; }
 function pitchOf(p) { return p.w / p.px; }
-function fmtPitch(p) { return (Math.round(pitchOf(p) * 1000) / 1000).toFixed(3); }
+function fmtPitch(p) { return fmtDec(Math.round(pitchOf(p) * 1000) / 1000, 3); }
 
 /* ---------- screen kinds (presets for "Add screen") ---------- */
+const kindDef = (label, o) => Object.assign({ get label() { return tr(label); } }, o);
 const KINDS = {
-  main: { label: 'Main', panel: 'g50100-39', cols: 16, rows: 4, mount: 'flown' },
-  side: { label: 'Side', panel: 'g5050-39', cols: 4, rows: 6, mount: 'flown' },
-  totem: { label: 'Totem', panel: 'g50100-39', cols: 2, rows: 4, mount: 'ground' },
-  banner: { label: 'Banner / fascia', panel: 'g5050-39', cols: 20, rows: 1, mount: 'flown' },
-  dj: { label: 'DJ booth front', panel: 'g5050-39', cols: 6, rows: 2, mount: 'ground' },
-  arc: { label: 'Arc / cylinder', panel: 'g5050-39', cols: 16, rows: 4, shape: 'concave', angle: 7.5, mount: 'ground' },
-  free: { label: 'Free', panel: 'g5050-39', cols: 4, rows: 3, mount: 'ground' },
+  main: kindDef('Main', { panel: 'g50100-39', cols: 16, rows: 4, mount: 'flown' }),
+  side: kindDef('Side', { panel: 'g5050-39', cols: 4, rows: 6, mount: 'flown' }),
+  totem: kindDef('Totem', { panel: 'g50100-39', cols: 2, rows: 4, mount: 'ground' }),
+  banner: kindDef('Banner / fascia', { panel: 'g5050-39', cols: 20, rows: 1, mount: 'flown' }),
+  dj: kindDef('DJ booth front', { panel: 'g5050-39', cols: 6, rows: 2, mount: 'ground' }),
+  arc: kindDef('Arc / cylinder', { panel: 'g5050-39', cols: 16, rows: 4, shape: 'concave', angle: 7.5, mount: 'ground' }),
+  free: kindDef('Free', { panel: 'g5050-39', cols: 4, rows: 3, mount: 'ground' }),
 };
 
 /* ---------- how a screen is held up ----------
@@ -72,8 +123,8 @@ const KINDS = {
    the flying bars, the hoists lift, the next row goes underneath); a ground stack stands on base beams
    with outriggers and is built from the bottom row up. */
 const MOUNTS = {
-  flown: { label: 'Flown', long: 'Flown (hung from flying bars)' },
-  ground: { label: 'Ground stack', long: 'Ground stack (on ground beams, with H-frames behind)' },
+  flown: { get label() { return tr('Flown'); }, get long() { return tr('Flown (hung from flying bars)'); } },
+  ground: { get label() { return tr('Ground stack'); }, get long() { return tr('Ground stack (on ground beams, with H-frames behind)'); } },
 };
 const MOUNT_ORDER = ['flown', 'ground'];
 // A ground stack as built with portable ground-stack systems (after photos of the user's own): the cabinets
@@ -104,8 +155,8 @@ function groundArmHeights(s, comp) {
 function groundFrames(cols, colW) { return Array.from({ length: cols + 1 }, (_, i) => i * colW); }
 function buildOrderText(mount) {
   return mount === 'flown'
-    ? 'top row first, left to right, then each row below (a flown screen is hung from the top down)'
-    : 'bottom row first, left to right, then each row above';
+    ? tr('top row first, left to right, then each row below (a flown screen is hung from the top down)')
+    : tr('bottom row first, left to right, then each row above');
 }
 const KIND_ORDER = ['main', 'side', 'totem', 'banner', 'dj', 'arc', 'free'];
 
@@ -151,29 +202,29 @@ function defaultScreen(kind = 'free') {
 
 // a new project starts with an empty stage; screens are added from "Add screen"
 function blankProject() {
-  return { v: VERSION, id: uid('p-'), name: 'Untitled project', client: '', revision: 'A',
+  return { v: VERSION, id: uid('p-'), name: tr('Untitled project'), client: '', revision: 'A',
     created: new Date().toISOString(), updated: new Date().toISOString(),
     settings: defaultSettings(), catalog: [], screens: [] };
 }
 
 function exampleProject() {
-  const main = Object.assign(defaultScreen('main'), { name: 'Main screen', color: SCREEN_COLORS[0], cols: 19, rows: 4, panel: 'g50100-39', x: 0, y: 1000 });
-  const left = Object.assign(defaultScreen('side'), { name: 'Side left', color: SCREEN_COLORS[1], cols: 4, rows: 6, panel: 'g5050-39', x: -6750, y: 1500, yaw: 15 });
-  const right = Object.assign(defaultScreen('side'), { name: 'Side right', color: SCREEN_COLORS[2], cols: 4, rows: 6, panel: 'g5050-39', x: 6750, y: 1500, yaw: -15 });
-  const dj = Object.assign(defaultScreen('dj'), { name: 'DJ booth front', color: SCREEN_COLORS[3], cols: 6, rows: 2, panel: 'g5050-39', x: 0, y: 0, z: 2500 });
-  return { v: VERSION, id: uid('p-'), name: 'Example: festival stage', client: 'Example client', revision: 'A',
+  const main = Object.assign(defaultScreen('main'), { name: tr('Main screen'), color: SCREEN_COLORS[0], cols: 19, rows: 4, panel: 'g50100-39', x: 0, y: 1000 });
+  const left = Object.assign(defaultScreen('side'), { name: tr('Side left'), color: SCREEN_COLORS[1], cols: 4, rows: 6, panel: 'g5050-39', x: -6750, y: 1500, yaw: 15 });
+  const right = Object.assign(defaultScreen('side'), { name: tr('Side right'), color: SCREEN_COLORS[2], cols: 4, rows: 6, panel: 'g5050-39', x: 6750, y: 1500, yaw: -15 });
+  const dj = Object.assign(defaultScreen('dj'), { name: tr('DJ booth front'), color: SCREEN_COLORS[3], cols: 6, rows: 2, panel: 'g5050-39', x: 0, y: 0, z: 2500 });
+  return { v: VERSION, id: uid('p-'), name: tr('Example: festival stage'), client: tr('Example client'), revision: 'A',
     created: new Date().toISOString(), updated: new Date().toISOString(), example: true,
-    settings: Object.assign(defaultSettings(), { venue: 'Main stage' }), catalog: [], screens: [main, left, right, dj] };
+    settings: Object.assign(defaultSettings(), { venue: tr('Main stage') }), catalog: [], screens: [main, left, right, dj] };
 }
 
 /* ---------- validation / migration (used for imports and stored data) ---------- */
 function normalizeProject(raw) {
-  if (!raw || typeof raw !== 'object') throw new Error('The file is not a project.');
-  if (!Array.isArray(raw.screens)) throw new Error('The file has no screens list.');
+  if (!raw || typeof raw !== 'object') throw new Error(tr('The file is not a project.'));
+  if (!Array.isArray(raw.screens)) throw new Error(tr('The file has no screens list.'));
   const p = {
     v: VERSION,
     id: typeof raw.id === 'string' && /^[A-Za-z0-9_.~:@+-]{1,60}$/.test(raw.id) ? raw.id : uid('p-'),
-    name: String(raw.name || 'Imported project').slice(0, 120),
+    name: String(raw.name || tr('Imported project')).slice(0, 120),
     client: String(raw.client || '').slice(0, 120),
     revision: String(raw.revision || 'A').slice(0, 12),
     created: raw.created || new Date().toISOString(),
@@ -204,7 +255,7 @@ function normalizeProject(raw) {
     const d = defaultScreen(KINDS[rs && rs.kind] ? rs.kind : 'free');
     const s = Object.assign(d, rs || {});
     s.id = typeof s.id === 'string' && s.id ? s.id.slice(0, 40) : uid('s-');
-    s.name = String(s.name || 'Screen').slice(0, 80);
+    s.name = String(s.name || tr('Screen')).slice(0, 80);
     s.color = /^#[0-9a-fA-F]{6}$/.test(s.color) ? s.color : SCREEN_COLORS[0];
     s.x = num(s.x); s.y = num(s.y); s.z = num(s.z); s.yaw = clamp(num(s.yaw), -180, 180);
     s.cols = clamp(int(s.cols, 4), 1, 200); s.rows = clamp(int(s.rows, 3), 1, 100);
@@ -249,7 +300,7 @@ function normalizePanel(c) {
     if (brand && n.toLowerCase().startsWith(brand.toLowerCase() + ' ')) n = n.slice(brand.length + 1);
     model = n.slice(0, 80);
   }
-  if (!brand && !model) model = 'Custom panel';
+  if (!brand && !model) model = tr('Custom panel');
   const stock = opt(c.stock);
   return {
     id: typeof c.id === 'string' && c.id ? c.id.slice(0, 40) : uid('c-'),
@@ -296,7 +347,7 @@ function sheetField(raw) {
   const has = (re) => re.test(s);
   if (has(/ (brand|manufacturer|make|maker|vendor|znamka|proizvajalec) /)) return 'brand';
   if (has(/ (notes?|comments?|remarks?|opombe?) /)) return 'note';
-  if (has(/ (pitch|korak) /)) return 'pitch';
+  if (has(/ (pitch|korak|razmik) /)) return 'pitch';
   if (has(/ (pixels?|px|pix|res|resolution|piksl\w*|locljivost\w*) /)) {
     const across = has(/ (across|wide|width|horizontal|horiz|x|w|vodoravn\w*|sirin\w*) /), down = has(/ (down|high|height|vertical|vert|y|h|navpicn\w*|visin\w*) /);
     return across && !down ? 'px' : down && !across ? 'py' : 'res';
@@ -344,7 +395,7 @@ function panelsFromTable(rows, prefer = '.') {
     const row = rows[r] || [];
     if (!row.some((v) => text(v) !== '')) continue;
     const line = r + 1, brand = text(cell(row, 'brand')).slice(0, 40), model = text(cell(row, 'model')).slice(0, 80);
-    if (!brand && !model) { skipped.push({ row: line, name: '', reason: 'no brand or model' }); continue; }
+    if (!brand && !model) { skipped.push({ row: line, name: '', reason: tr('no brand or model') }); continue; }
     const name = panelName(brand, model);
     let w = n(cell(row, 'w')), h = n(cell(row, 'h'));
     if (!(w > 0 && h > 0) && 'size' in m) [w, h] = pair(cell(row, 'size'));
@@ -352,12 +403,12 @@ function panelsFromTable(rows, prefer = '.') {
     if (!(px > 0 && py > 0) && 'res' in m) [px, py] = pair(cell(row, 'res'));
     // from the pitch, with square pixels: the rounded pitch (2.6 for 2.604) would otherwise give 385 instead of 384 down a 1 m cabinet
     if (!(px > 0 && py > 0) && w > 0 && h > 0) { const p = n(cell(row, 'pitch')); if (p > 0) { px = Math.round(w / p); py = h * px / w; } }
-    if (!(w > 0 && h > 0)) { skipped.push({ row: line, name, reason: 'no cabinet width and height' }); continue; }
-    if (w < 10 || h < 10 || w > 5000 || h > 5000) { skipped.push({ row: line, name, reason: 'cabinet width and height should be in millimetres' }); continue; }
-    if (!(px >= 0.5 && py >= 0.5)) { skipped.push({ row: line, name, reason: 'no pixels across and down (or pixel pitch)' }); continue; }
-    if (px > 8192 || py > 8192) { skipped.push({ row: line, name, reason: 'more than 8,192 pixels across or down' }); continue; }
+    if (!(w > 0 && h > 0)) { skipped.push({ row: line, name, reason: tr('no cabinet width and height') }); continue; }
+    if (w < 10 || h < 10 || w > 5000 || h > 5000) { skipped.push({ row: line, name, reason: tr('cabinet width and height should be in millimetres') }); continue; }
+    if (!(px >= 0.5 && py >= 0.5)) { skipped.push({ row: line, name, reason: tr('no pixels across and down (or pixel pitch)') }); continue; }
+    if (px > 8192 || py > 8192) { skipped.push({ row: line, name, reason: tr('more than {n} pixels across or down', { n: fmtInt(8192) }) }); continue; }
     const id = panelIdFor(brand, model);
-    if (seen.has(id)) { skipped.push({ row: line, name, reason: `same brand and model as row ${seen.get(id)}` }); continue; }
+    if (seen.has(id)) { skipped.push({ row: line, name, reason: tr('same brand and model as row {row}', { row: seen.get(id) }) }); continue; }
     seen.set(id, line);
     panels.push(normalizePanel({ id, brand, model, w, h, px: Math.round(px), py: Math.round(py),
       kg: opt(cell(row, 'kg')), wMax: opt(cell(row, 'wMax')), wAvg: opt(cell(row, 'wAvg')), stock: opt(cell(row, 'stock')) }));
@@ -366,12 +417,18 @@ function panelsFromTable(rows, prefer = '.') {
 }
 
 /* ---------- formatting ---------- */
-const fmtInt = (n) => (Number.isFinite(n) ? Math.round(n).toLocaleString('en-US') : '—');
+// a number as English writes it ('1,026.5') in the current language ('1.026,5' in Slovenian)
+const locNum = (t) => (LANG === 'sl' ? String(t).replace(/[.,]/g, (c) => (c === '.' ? ',' : '.')) : String(t));
+const fmtInt = (n) => (Number.isFinite(n) ? locNum(Math.round(n).toLocaleString('en-US')) : '—');
 function fmtNum(n, maxDec = 2) {
   if (!Number.isFinite(n)) return '—';
   const f = Math.pow(10, maxDec);
-  return (Math.round(n * f) / f).toLocaleString('en-US', { maximumFractionDigits: maxDec });
+  return locNum((Math.round(n * f) / f).toLocaleString('en-US', { maximumFractionDigits: maxDec }));
 }
+const fmtDec = (n, dec) => locNum(n.toFixed(dec));                // fixed decimals: 3.906
+const fmtPlain = (n, dec = 1) => locNum(String(+n.toFixed(dec)));  // no thousands separator: 337.5, 1000
+const fmtPct = (share, dec = 0) => fmtDec(share * 100, dec) + (LANG === 'sl' ? ' %' : '%');   // 0.96 -> 96% (96 % in Slovenian)
+function fmtDate(d, o = { day: 'numeric', month: 'short', year: 'numeric' }) { return new Date(d).toLocaleDateString(LANG === 'sl' ? 'sl-SI' : 'en-GB', o); }
 const fmtM = (mm, dec = 3) => fmtNum(mm / 1000, dec);           // 9500 -> "9.5"
 const fmtSize = (wmm, hmm) => `${fmtM(wmm)} × ${fmtM(hmm)} m`;
 const fmtRes = (w, h) => `${fmtInt(w)} × ${fmtInt(h)}`;
@@ -381,18 +438,18 @@ function slug(s) { return String(s || 'project').normalize('NFKD').replace(/[\u0
 function ratioInfo(w, h) {
   if (!(w > 0) || !(h > 0)) return { text: '—', delta: 0, value: 0 };
   const g = gcd(w, h); const a = Math.round(w / g), b = Math.round(h / g);
-  const text = a <= 32 && b <= 32 ? `${a}:${b}` : `${(w / h).toFixed(2)}:1`;
+  const text = a <= 32 && b <= 32 ? `${a}:${b}` : `${fmtDec(w / h, 2)}:1`;
   return { text, delta: (w / h) / (16 / 9) - 1, value: w / h };
 }
-function fmtDelta(d) { const v = d * 100; return `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}% vs 16:9`; }
+function fmtDelta(d) { const v = d * 100; return tr('{d}% vs 16:9', { d: `${v >= 0 ? '+' : '−'}${fmtDec(Math.abs(v), 1)}` }); }
 
 /* ---------- size resolution ---------- */
 function resolveRows(project, s, warnings, info) {
   const EPS = 1e-6;
   if (s.sizeMode === 'mix') {
     const small = getPanel(project, s.mix.small), big = getPanel(project, s.mix.big);
-    if (Math.abs(small.w - big.w) > 0.01) warnings.push('The two mixed panels have different widths, so columns will not line up.');
-    if (Math.abs(pitchOf(small) - pitchOf(big)) > 0.001) warnings.push('The two mixed panels have different pixel pitch.');
+    if (Math.abs(small.w - big.w) > 0.01) warnings.push(tr('The two mixed panels have different widths, so columns will not line up.'));
+    if (Math.abs(pitchOf(small) - pitchOf(big)) > 0.001) warnings.push(tr('The two mixed panels have different pixel pitch.'));
     const colW = small.w;
     const cols = clamp(Math.round(s.mix.w * 1000 / colW), 1, 200);
     const totalH = s.mix.h * 1000;
@@ -545,7 +602,7 @@ function computeScreen(project, s) {
     g.cells.forEach((c, j) => { c.port = i; c.seq = j + 1; });
     return { i, label: `${st.portPrefix || 'P'}${i + 1}`, color: PORT_COLORS[i % PORT_COLORS.length], cells: g.cells, load: g.load, cap: portCap, count: g.cells.length };
   });
-  if (ports.some((p) => p.load > p.cap)) warnings.push('A single cabinet has more pixels than one data port carries.');
+  if (ports.some((p) => p.load > p.cap)) warnings.push(tr('A single cabinet has more pixels than one data port carries.'));
 
   // power routing (same path as data)
   let power = null;
@@ -561,7 +618,7 @@ function computeScreen(project, s) {
       g.cells.forEach((c, j) => { c.circ = i; c.cseq = j + 1; });
       return { i, label: `C${i + 1}`, color: CIRCUIT_COLORS[i % CIRCUIT_COLORS.length], cells: g.cells, load: g.load, cap: circuitW, count: g.cells.length, amps: g.load / (volts * pf) };
     });
-    if (circuits.some((c) => c.load > c.cap)) warnings.push('A single cabinet draws more than one circuit allows.');
+    if (circuits.some((c) => c.load > c.cap)) warnings.push(tr('A single cabinet draws more than one circuit allows.'));
     power = { circuits, circuitW, basis: basisKey, pf };
   }
 
@@ -578,7 +635,7 @@ function computeScreen(project, s) {
     const chord = closed ? 2 * rOut : 2 * rOut * Math.sin(rad(arc) / 2);
     const mid = cols % 2 === 0 ? rOut : rIn;      // distance from the curve centre to the middle of the wall
     const depth = closed ? 2 * rOut : mid - rOut * Math.cos(rad(arc) / 2);
-    if (arcRaw > 360.001) warnings.push(`The curve goes past a full circle (${cols} columns × ${fmtNum(a)}° = ${fmtNum(arcRaw)}°).`);
+    if (arcRaw > 360.001) warnings.push(tr('The curve goes past a full circle ({cols} columns × {a}° = {arc}°).', { cols, a: fmtNum(a), arc: fmtNum(arcRaw) }));
     curve = { shape: s.shape, angle: a, arc, closed, rIn, rOut, chord, depth };
   }
 
@@ -680,7 +737,7 @@ function planControllers(project, comps) {
   const warnings = [];
   for (const s of shown) {
     const c = comps[s.id];
-    if (!screenFitsController(D, c)) warnings.push(`${s.name} is ${fmtInt(c.resW)} × ${fmtInt(c.resH)} px, larger than the ${fmtInt(D.maxW)} × ${fmtInt(D.maxH)} px one ${D.name} outputs, so it has to be shared between units.`);
+    if (!screenFitsController(D, c)) warnings.push(tr('{name} is {w} × {h} px, larger than the {mw} × {mh} px one {model} outputs, so it has to be shared between units.', { name: s.name, w: fmtInt(c.resW), h: fmtInt(c.resH), mw: fmtInt(D.maxW), mh: fmtInt(D.maxH), model: D.name }));
   }
   return { model: D, auto: !chosen, units, count: units.length, mains, backups: st.backup ? mains : 0, pixels, warnings };
 }
@@ -714,43 +771,45 @@ function packingList(project, comps, plan) {
   }
   for (const t of types.values()) {
     const p = t.panel;
-    add('Cabinets', `${p.name} (${+p.w.toFixed(1)} × ${+p.h.toFixed(1)} mm)`, t.parts, p.kg !== null ? `${fmtNum(p.kg, 1)} kg each${p.builtin ? ', typical' : ''}` : '');
+    add(tr('Cabinets'), `${p.name} (${fmtPlain(p.w)} × ${fmtPlain(p.h)} mm)`, t.parts, p.kg === null ? '' : p.builtin ? tr('{kg} kg each, typical', { kg: fmtNum(p.kg, 1) }) : tr('{kg} kg each', { kg: fmtNum(p.kg, 1) }));
   }
   // data
-  if (plan) items.push({ group: 'Data', item: `NovaStar ${plan.model.name} controller`, qty: plan.count, parts: [], note: `${plan.mains} main${plan.backups ? ` + ${plan.backups} backup` : ''} port${plan.mains + plan.backups === 1 ? '' : 's'} in use` });
-  add('Data', 'Data cable, controller to first cabinet', per((c) => c.ports.length), 'length to suit the controller position');
-  if (st.backup) add('Data', 'Backup data cable, last cabinet back to controller', per((c) => c.ports.length), 'length to suit the controller position');
+  const DATA = tr('Data'), RIG = tr('Rigging'), POWER = tr('Power'), across = tr('across an empty position, a Z return or a row change');
+  if (plan) items.push({ group: DATA, item: tr('NovaStar {model} controller', { model: plan.model.name }), qty: plan.count, parts: [],
+    note: plan.backups ? tr('{main} main + {backup} backup ports in use', { main: fmtInt(plan.mains), backup: fmtInt(plan.backups) }) : trn(plan.mains, '{n} main port in use', '{n} main ports in use') });
+  add(DATA, tr('Data cable, controller to first cabinet'), per((c) => c.ports.length), tr('length to suit the controller position'));
+  if (st.backup) add(DATA, tr('Backup data cable, last cabinet back to controller'), per((c) => c.ports.length), tr('length to suit the controller position'));
   const dl = new Map(list.map(({ s, c }) => [s.id, c.ports.map((p) => chainLinks(p.cells))]));
-  add('Data', 'Data link cable, cabinet to next cabinet', per((c) => sum(dl.get(c.id), (x) => x.short)));
+  add(DATA, tr('Data link cable, cabinet to next cabinet'), per((c) => sum(dl.get(c.id), (x) => x.short)));
   const lengths = (f) => { const all = new Set(); for (const { s } of list) for (const x of f(s.id)) for (const L of x.long) all.add(L); return [...all].sort((a, b) => a - b); };
-  for (const L of lengths((id) => dl.get(id))) add('Data', `Data link cable, at least ${L} m`, per((c) => sum(dl.get(c.id), (x) => x.long.filter((v) => v === L).length)), 'across an empty position, a Z return or a row change');
+  for (const L of lengths((id) => dl.get(id))) add(DATA, tr('Data link cable, at least {m} m', { m: L }), per((c) => sum(dl.get(c.id), (x) => x.long.filter((v) => v === L).length)), across);
   // rigging: lengths to cover, since the hardware itself depends on the cabinet system
   const byMount = (m) => list.filter(({ s }) => (MOUNTS[s.mount] ? s.mount : 'ground') === m);
   const metres = (group, item, sel, note, withHeight = false) => {
-    const parts = sel.map(({ s, c }) => ({ name: s.name, n: c.W / 1000, label: withHeight ? `${fmtNum(c.W / 1000, 2)} m wide, ${fmtNum(c.H / 1000, 2)} m high` : `${fmtNum(c.W / 1000, 2)} m` }));
+    const parts = sel.map(({ s, c }) => ({ name: s.name, n: c.W / 1000, label: withHeight ? tr('{w} m wide, {h} m high', { w: fmtNum(c.W / 1000, 2), h: fmtNum(c.H / 1000, 2) }) : `${fmtNum(c.W / 1000, 2)} m` }));
     if (parts.length) items.push({ group, item, qty: sum(parts, (x) => x.n), unit: 'm', parts, note });
   };
-  metres('Rigging', 'Flying bars along the top edge', byMount('flown'), 'hanging points and hoists per the rigging plan');
+  metres(RIG, tr('Flying bars along the top edge'), byMount('flown'), tr('hanging points and hoists per the rigging plan'));
   // ground stacks: a ground beam under every cabinet column (as wide as the cabinet), and the rear supports
   const grounds = byMount('ground'), widths = [...new Set(grounds.map(({ c }) => c.colW))].sort((a, b) => a - b);
   for (const w of widths) {
     const sel = grounds.filter(({ c }) => c.colW === w), parts = sel.map(({ s, c }) => ({ name: s.name, n: c.cols }));
-    items.push({ group: 'Rigging', item: `Ground beam ${+w.toFixed(1)} mm with 2 adjustable feet (one per cabinet column)`, qty: sum(parts, (x) => x.n), parts, note: 'the cabinets stand on these' });
+    items.push({ group: RIG, item: tr('Ground beam {w} mm with 2 adjustable feet (one per cabinet column)', { w: fmtPlain(w) }), qty: sum(parts, (x) => x.n), parts, note: tr('the cabinets stand on these') });
   }
   // H-frames and posts behind the screen, as laid out per screen (see groundLayout)
-  for (const [kind, item, note] of [['H', 'H-frame: ladder on a pair of floor rails', 'clamped to the cabinets at the joints between ground beams'],
-    ['P', 'Post on a pair of floor rails (between H-frames)', 'clamped to the cabinets']]) {
-    const parts = grounds.map(({ s, c }) => { const n = groundLayout(s, c.cols).filter((x) => x === kind).length; return { name: s.name, n, label: `${fmtInt(n)} × ${fmtNum(groundFrameHeight(s, c), 2)} m high` }; }).filter((x) => x.n);
-    if (parts.length) items.push({ group: 'Rigging', item, qty: sum(parts, (x) => x.n), parts, note });
+  for (const [kind, item, note] of [['H', tr('H-frame: ladder on a pair of floor rails'), tr('clamped to the cabinets at the joints between ground beams')],
+    ['P', tr('Post on a pair of floor rails (between H-frames)'), tr('clamped to the cabinets')]]) {
+    const parts = grounds.map(({ s, c }) => { const n = groundLayout(s, c.cols).filter((x) => x === kind).length; return { name: s.name, n, label: tr('{n} × {h} m high', { n: fmtInt(n), h: fmtNum(groundFrameHeight(s, c), 2) }) }; }).filter((x) => x.n);
+    if (parts.length) items.push({ group: RIG, item, qty: sum(parts, (x) => x.n), parts, note });
   }
-  const armParts = grounds.map(({ s, c }) => { const n = groundLayout(s, c.cols).filter((x) => x !== '-').length * groundArms(s); return { name: s.name, n, label: `${fmtInt(n)} (${groundArms(s)} per frame or post)` }; }).filter((x) => x.n);
-  if (armParts.length) items.push({ group: 'Rigging', item: 'Arm with clamps (from an H-frame or post to the screen)', qty: sum(armParts, (x) => x.n), parts: armParts, note: 'spread evenly up the screen' });
+  const armParts = grounds.map(({ s, c }) => { const n = groundLayout(s, c.cols).filter((x) => x !== '-').length * groundArms(s); return { name: s.name, n, label: tr('{n} ({a} per frame or post)', { n: fmtInt(n), a: groundArms(s) }) }; }).filter((x) => x.n);
+  if (armParts.length) items.push({ group: RIG, item: tr('Arm with clamps (from an H-frame or post to the screen)'), qty: sum(armParts, (x) => x.n), parts: armParts, note: tr('spread evenly up the screen') });
   // power
   if (list.length && list.every(({ c }) => c.power)) {
-    add('Power', `Power feed cable, one per ${fmtInt(st.circuitAmps)} A circuit`, per((c) => c.power.circuits.length), 'length to suit the distribution');
+    add(POWER, tr('Power feed cable, one per {a} A circuit', { a: fmtInt(st.circuitAmps) }), per((c) => c.power.circuits.length), tr('length to suit the distribution'));
     const pl = new Map(list.map(({ s, c }) => [s.id, c.power.circuits.map((k) => chainLinks(k.cells))]));
-    add('Power', 'Power link cable, cabinet to next cabinet', per((c) => sum(pl.get(c.id), (x) => x.short)));
-    for (const L of lengths((id) => pl.get(id))) add('Power', `Power link cable, at least ${L} m`, per((c) => sum(pl.get(c.id), (x) => x.long.filter((v) => v === L).length)), 'across an empty position, a Z return or a row change');
+    add(POWER, tr('Power link cable, cabinet to next cabinet'), per((c) => sum(pl.get(c.id), (x) => x.short)));
+    for (const L of lengths((id) => pl.get(id))) add(POWER, tr('Power link cable, at least {m} m', { m: L }), per((c) => sum(pl.get(c.id), (x) => x.long.filter((v) => v === L).length)), across);
   }
   return items;
 }
@@ -815,7 +874,8 @@ function uniqueName(project, base) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { BUILTIN_PANELS, KINDS, CONTROLLERS, computeScreen, computeTotals, suggest169, exampleProject, blankProject, normalizeProject,
+  module.exports = { LANGS, DICT, TR_MISSING, setLang, addLang, tr, trc, trn, fmtNum, fmtDec, fmtPct, fmtDate, presetSpec, panelShort,
+    BUILTIN_PANELS, KINDS, CONTROLLERS, computeScreen, computeTotals, suggest169, exampleProject, blankProject, normalizeProject,
     ratioInfo, splitLines, orderLines, facetTransforms, colLetter, slug, fmtInt, fmtM, fmtSize, getPanel, defaultScreen, placeNewScreen, holesInGrid, defaultSettings,
     planControllers, assignControllers, packingList, chainLinks, MOUNTS, MOUNT_ORDER, buildOrderText, packQty, packPart,
     normalizePanel, panelName, panelKey, panelIdFor, samePanel, sheetField, sheetNum, panelsFromTable, findPanel, KIND_ORDER, groundFrames, groundLayout, groundFrameHeight, defaultGroundStack, groundArms, groundArmHeights };

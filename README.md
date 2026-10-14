@@ -6,6 +6,10 @@ Plan LED video walls in the browser: cabinets and size, curved screens, data por
 
 It works on a computer, tablet or phone, in Chrome, Safari, Edge or Firefox. Once loaded it also works offline, and `index.html` can be downloaded and opened as a file on a computer.
 
+## Language
+
+The planner is in English and Slovenian (slovenščina). It starts in Slovenian when the browser is set to Slovenian, otherwise in English. To switch, open **Settings** (the sliders button next to Export) and choose under **Language**. The choice is kept in this browser for every project. Everything follows it: the text, numbers (1.026,5 kg in Slovenian), the drawings, the PDF report, and the spreadsheet column and file names. Names you typed stay as they are, so a project opens in either language.
+
 ## Starting a project
 
 The planner opens with an empty stage. Either tap a screen type (main, side, totem, banner, DJ booth front, arc or free), or under **Your own size** pick the panel (your own panels included), type the width × height in metres or in cabinets, choose flown or ground stack, and tap **Add screen**. Add more screens with **Add screen**, which also has **Your own size…**. **New** starts another empty project. The example festival stage is under **Open › Open the example project**.
@@ -22,7 +26,7 @@ A project keeps a copy of each panel it uses, so a project file works anywhere. 
 
 Upload your Excel file to this repository with the name **`panels.xlsx`**, next to `index.html` (on github.com: **Add file › Upload files**, then **Commit changes**). The planner reads it every time it opens, on every device and for everyone who uses the link, and keeps the last copy for offline use. To change the list, edit the file and upload it again; the site updates about a minute later. A `panels.csv` file works too.
 
-Start from **[panels-template.xlsx](panels-template.xlsx)**. Columns: **Brand**, **Model**, **Width (mm)**, **Height (mm)**, **Pixels across**, **Pixels down** (or **Pitch (mm)** instead of the pixel counts), and optionally **Weight (kg)**, **Max power (W)**, **Typical power (W)** and **Stock**. Decimal commas or points both work, and Slovenian column names such as Znamka, Širina, Višina, Teža, Moč and Zaloga are recognised.
+Start from **[panels-template.xlsx](panels-template.xlsx)**. Columns: **Brand**, **Model**, **Width (mm)**, **Height (mm)**, **Pixels across**, **Pixels down** (or **Pitch (mm)** instead of the pixel counts), and optionally **Weight (kg)**, **Max power (W)**, **Typical power (W)** and **Stock**. Decimal commas or points both work, and Slovenian column names such as Znamka, Širina, Višina, Teža, Moč and Zaloga are recognised. In Slovenian, **Export** writes the Slovenian column names, which import again just the same.
 
 This repository is public, so anyone can download `panels.xlsx`. Leave stock numbers out of that copy if they are private, and use **Import** for them instead.
 
@@ -56,6 +60,8 @@ Projects save automatically in the browser you use, on that device, as soon as y
 ## Changing the planner
 
 The app code is in `source/src`. After changing it, run `python3 source/build.py`, which rebuilds `index.html` with the libraries and fonts from `source/vendor` embedded.
+
+Text the planner shows is written in English inside `tr()` (or `trn()` for counts), and its Slovenian is in `source/src/lang-sl.js`. When you add or change text, add the Slovenian there too, then run `node source/check-lang.js`, which lists any text without a translation.
 
 ## Third-party software and fonts
 

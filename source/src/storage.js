@@ -56,8 +56,8 @@ const Store = (() => {
     if (code === 'invalid_argument' || code === 'revoked' || code === 'not_granted' || code === 'capability_disabled' || code === 'capability_removed') {
       cloudOK = false; setState(localOK ? 'local' : 'off', ''); return;
     }
-    if (code === 'quota_exceeded') { setState('error', 'Your saved projects are full. Delete a few in Open, then try again.'); return; }
-    setState('error', 'Could not save just now. It will try again on your next change.');
+    if (code === 'quota_exceeded') { setState('error', tr('Your saved projects are full. Delete a few in Open, then try again.')); return; }
+    setState('error', tr('Could not save just now. It will try again on your next change.'));
   }
 
   async function save(p) {
@@ -150,7 +150,7 @@ const Store = (() => {
 })();
 
 const Prefs = {
-  data: { theme: 'system', mode: 'pro', grid: true, labels: true, dims: true, planMode: 'data', planDims: true, planLabels: true, face: 'cabinets', person: true, sf: null },
+  data: { theme: 'system', mode: 'pro', grid: true, labels: true, dims: true, planMode: 'data', planDims: true, planLabels: true, face: 'cabinets', person: true, sf: null, lang: null },
   load() { try { Object.assign(this.data, JSON.parse(localStorage.getItem('lwp:prefs') || '{}')); } catch (e) { /* defaults */ } return this.data; },
   save() { try { localStorage.setItem('lwp:prefs', JSON.stringify(this.data)); } catch (e) { /* ignore */ } },
 };
@@ -167,12 +167,12 @@ const Downloads = (() => {
   function available() { return inViewer ? !!ns : true; }
   async function save(filename, data) {
     if (inViewer) {
-      if (!ns) { toast('Downloads are not available in this view.'); return false; }
-      try { await ns.save({ filename, data }); toast(`Saved ${filename}`); return true; }
+      if (!ns) { toast(tr('Downloads are not available in this view.')); return false; }
+      try { await ns.save({ filename, data }); toast(tr('Saved {name}', { name: filename })); return true; }
       catch (e) {
         if (e && e.code === 'declined') return false;
-        if (e && e.code === 'rate_limited') { toast('A save prompt is already open. Finish that one first.'); return false; }
-        toast(`Could not save ${filename}${e && e.message ? ': ' + e.message : ''}`); return false;
+        if (e && e.code === 'rate_limited') { toast(tr('A save prompt is already open. Finish that one first.')); return false; }
+        toast(tr('Could not save {name}', { name: filename }) + (e && e.message ? ': ' + e.message : '')); return false;
       }
     }
     // opened outside the viewer (e.g. as a saved file): use a normal browser download
@@ -180,7 +180,7 @@ const Downloads = (() => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    toast(`Saved ${filename}`);
+    toast(tr('Saved {name}', { name: filename }));
     return true;
   }
   return { init, save, available, get resolved() { return resolved; } };

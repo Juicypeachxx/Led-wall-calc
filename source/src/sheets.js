@@ -6,10 +6,10 @@
    ============================================================ */
 
 const Sheets = (() => {
-  const NOT_A_SHEET = 'The file is not an Excel workbook (.xlsx) or a CSV file. Save it from Excel, Numbers or Google Sheets as .xlsx or .csv and import that.';
+  const notASheet = () => new Error(tr('The file is not an Excel workbook (.xlsx) or a CSV file. Save it from Excel, Numbers or Google Sheets as .xlsx or .csv and import that.'));
 
   async function inflate(bytes) {
-    if (typeof DecompressionStream !== 'function') throw new Error('This browser cannot open Excel files. Save the sheet as CSV and import that, or update the browser.');
+    if (typeof DecompressionStream !== 'function') throw new Error(tr('This browser cannot open Excel files. Save the sheet as CSV and import that, or update the browser.'));
     const out = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
     return new Uint8Array(await new Response(out).arrayBuffer());
   }
@@ -18,7 +18,7 @@ const Sheets = (() => {
     const dv = new DataView(buf), n = buf.byteLength;
     let end = -1;
     for (let i = n - 22; i >= Math.max(0, n - 22 - 65535); i--) if (dv.getUint32(i, true) === 0x06054b50) { end = i; break; }
-    if (end < 0) throw new Error(NOT_A_SHEET);
+    if (end < 0) throw notASheet();
     const count = dv.getUint16(end + 10, true); let p = dv.getUint32(end + 16, true);
     const files = new Map(), td = new TextDecoder();
     for (let k = 0; k < count && p + 46 <= n; k++) {
@@ -33,12 +33,12 @@ const Sheets = (() => {
   async function zipText(buf, files, name) {
     const f = files.get(name.toLowerCase()); if (!f) return null;
     const dv = new DataView(buf);
-    if (f.off + 30 > buf.byteLength || dv.getUint32(f.off, true) !== 0x04034b50) throw new Error('The Excel file is damaged.');
+    if (f.off + 30 > buf.byteLength || dv.getUint32(f.off, true) !== 0x04034b50) throw new Error(tr('The Excel file is damaged.'));
     const start = f.off + 30 + dv.getUint16(f.off + 26, true) + dv.getUint16(f.off + 28, true);
-    if (start + f.size > buf.byteLength) throw new Error('The Excel file is damaged.');
+    if (start + f.size > buf.byteLength) throw new Error(tr('The Excel file is damaged.'));
     const raw = new Uint8Array(buf, start, f.size);
     const bytes = f.method === 0 ? raw : f.method === 8 ? await inflate(raw) : null;
-    if (!bytes) throw new Error('The Excel file is packed in a way this planner cannot read. Save it again as .xlsx or CSV.');
+    if (!bytes) throw new Error(tr('The Excel file is packed in a way this planner cannot read. Save it again as .xlsx or CSV.'));
     return new TextDecoder().decode(bytes);
   }
   const xml = (t) => new DOMParser().parseFromString(t, 'application/xml');
@@ -80,7 +80,7 @@ const Sheets = (() => {
   async function workbook(buf) {
     const files = zipEntries(buf);
     const wbText = await zipText(buf, files, 'xl/workbook.xml');
-    if (!wbText) throw new Error(NOT_A_SHEET);
+    if (!wbText) throw notASheet();
     const wb = xml(wbText), rels = xml((await zipText(buf, files, 'xl/_rels/workbook.xml.rels')) || '<r/>');
     const target = new Map(all(rels, 'Relationship').map((r) => [r.getAttribute('Id'), r.getAttribute('Target') || '']));
     const ssText = await zipText(buf, files, 'xl/sharedStrings.xml');
@@ -88,7 +88,7 @@ const Sheets = (() => {
     const sheets = all(wb, 'sheet').map((s, i) => {
       const idAttr = Array.from(s.attributes).find((a) => a.localName === 'id' && a.name !== 'sheetId');
       const t = idAttr && target.get(idAttr.value);
-      return { name: s.getAttribute('name') || `Sheet ${i + 1}`, path: t ? partPath(t) : `xl/worksheets/sheet${i + 1}.xml` };
+      return { name: s.getAttribute('name') || tr('Sheet {n}', { n: i + 1 }), path: t ? partPath(t) : `xl/worksheets/sheet${i + 1}.xml` };
     });
     return { sheets, read: async (sh) => { const t = await zipText(buf, files, sh.path); return t ? sheetRows(xml(t), shared) : []; } };
   }
@@ -129,7 +129,7 @@ const Sheets = (() => {
 
   // -> { panels, skipped: [{ row, name, reason }], header, columns, sheet, file }
   async function readPanels(blob, name = '') {
-    if (blob.size > 20 * 1024 * 1024) throw new Error('The file is larger than 20 MB. A panel list should be much smaller; check that it is the right file.');
+    if (blob.size > 20 * 1024 * 1024) throw new Error(tr('The file is larger than 20 MB. A panel list should be much smaller; check that it is the right file.'));
     const buf = await blob.arrayBuffer();
     const b = new Uint8Array(buf.slice(0, 4));
     if (b[0] === 0x50 && b[1] === 0x4B) {
@@ -142,9 +142,9 @@ const Sheets = (() => {
       }
       return { panels: [], skipped: [], header: false, columns: [], sheet: '', file: name };
     }
-    if (b[0] === 0xD0 && b[1] === 0xCF) throw new Error('This is an old Excel file (.xls). In Excel, save it as an Excel Workbook (.xlsx) and import that.');
+    if (b[0] === 0xD0 && b[1] === 0xCF) throw new Error(tr('This is an old Excel file (.xls). In Excel, save it as an Excel Workbook (.xlsx) and import that.'));
     const text = decodeText(buf);
-    if (/^\s*</.test(text)) throw new Error(NOT_A_SHEET);
+    if (/^\s*</.test(text)) throw notASheet();
     const { rows, prefer } = parseCSV(text);
     return Object.assign(panelsFromTable(rows, prefer), { sheet: '', file: name });
   }

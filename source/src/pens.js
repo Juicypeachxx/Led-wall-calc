@@ -62,9 +62,9 @@ class SvgPen {
   text(str, x, y, o = {}) {
     const anchor = o.anchor === 'middle' ? 'middle' : o.anchor === 'end' ? 'end' : 'start';
     const bl = { middle: 'central', top: 'hanging', bottom: 'text-after-edge', alphabetic: 'alphabetic' }[o.baseline || 'alphabetic'];
-    const tr = o.rotate ? ` transform="rotate(${f2(-o.rotate)} ${f2(x)} ${f2(y)})"` : '';
+    const rot = o.rotate ? ` transform="rotate(${f2(-o.rotate)} ${f2(x)} ${f2(y)})"` : '';
     const fam = FONT_STACK[o.font || 'ui'].replace(/"/g, "'");
-    this.out.push(`<text x="${f2(x)}" y="${f2(y)}" font-family="${fam}" font-size="${f2(o.size || 12)}" font-weight="${o.weight || 400}" fill="${o.fill || '#000'}"${o.opacity !== undefined ? ` fill-opacity="${o.opacity}"` : ''} text-anchor="${anchor}" dominant-baseline="${bl}"${o.ls ? ` letter-spacing="${o.ls}"` : ''}${tr}${o.attrs ? Object.keys(o.attrs).map((k) => ` ${k}="${esc(o.attrs[k])}"`).join('') : ''}>${esc(str)}</text>`);
+    this.out.push(`<text x="${f2(x)}" y="${f2(y)}" font-family="${fam}" font-size="${f2(o.size || 12)}" font-weight="${o.weight || 400}" fill="${o.fill || '#000'}"${o.opacity !== undefined ? ` fill-opacity="${o.opacity}"` : ''} text-anchor="${anchor}" dominant-baseline="${bl}"${o.ls ? ` letter-spacing="${o.ls}"` : ''}${rot}${o.attrs ? Object.keys(o.attrs).map((k) => ` ${k}="${esc(o.attrs[k])}"`).join('') : ''}>${esc(str)}</text>`);
   }
   measure(str, o = {}) { return measureCss(str, o); }
   open(attrs = {}) { this.out.push(`<g${Object.keys(attrs).map((k) => ` ${k}="${esc(attrs[k])}"`).join('')}>`); }

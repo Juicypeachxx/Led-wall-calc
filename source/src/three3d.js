@@ -16,19 +16,19 @@ const View3D = (() => {
 
   function fallback(msg) {
     if (!el) return;
-    el.innerHTML = `<div class="v3d-fallback"><strong>3D view unavailable</strong><span>${esc(msg)}</span></div>`;
+    el.innerHTML = `<div class="v3d-fallback"><strong>${tr('3D view unavailable')}</strong><span>${esc(msg)}</span></div>`;
   }
 
   function init(container) {
     if (inited) return true;
     el = container;
-    if (!available()) { fallback('The 3D library did not load. The rest of the planner works normally.'); failed = true; return false; }
+    if (!available()) { fallback(tr('The 3D library did not load. The rest of the planner works normally.')); failed = true; return false; }
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-    } catch (e) { failed = true; fallback('This browser has WebGL switched off, so the 3D view cannot draw.'); return false; }
+    } catch (e) { failed = true; fallback(tr('This browser has WebGL switched off, so the 3D view cannot draw.')); return false; }
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     el.appendChild(renderer.domElement);
-    renderer.domElement.setAttribute('aria-label', '3D view of the stage');
+    renderer.domElement.setAttribute('aria-label', tr('3D view of the stage'));
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(38, 1.6, 0.1, 600);
     camera.position.set(0, 5, 22);

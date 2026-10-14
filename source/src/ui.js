@@ -4,6 +4,9 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const PF = Prefs.load();
+// the language chosen in Settings, else the browser's: a Slovenian browser starts in Slovenian
+function browserLang() { return /^sl\b/i.test((navigator.languages && navigator.languages[0]) || navigator.language || '') ? 'sl' : 'en'; }
+setLang(PF.lang || browserLang());
 
 const S = {
   project: null, comps: {}, totals: null,
@@ -85,6 +88,37 @@ function applyMode() {
   document.documentElement.dataset.mode = PF.mode;
   $$('#mode-seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === PF.mode)));
 }
+/* ---------- language ----------
+   The fixed text of the page (shell.html) is written in English and translated in place. The English is
+   kept for every text and label, so switching back works too. What the app draws itself (cards, tabs,
+   drawings, menus) is rendered again in the new language. */
+const SHELL_EN = new WeakMap();
+const SHELL_LIVE = new Set(['save-pill', 'screen-tabs', 'screen-props', 'cfg', 'results', 'plan-title', 'plan-legend', 'export-menu', 'add-menu', 'empty-kinds', 'start-fields', 'view3d', 'modal-root', 'toasts']);
+function translateShell(el) {
+  const orig = SHELL_EN.get(el) || {};
+  for (const a of ['title', 'aria-label', 'placeholder']) {
+    if (!el.hasAttribute(a)) continue;
+    if (!(a in orig)) orig[a] = el.getAttribute(a);
+    el.setAttribute(a, tr(orig[a]));
+  }
+  SHELL_EN.set(el, orig);
+  // drawings, code and the parts the app fills in itself keep their own label only
+  if (el.namespaceURI !== 'http://www.w3.org/1999/xhtml' || SHELL_LIVE.has(el.id) || /^(SCRIPT|STYLE|TEMPLATE|TEXTAREA)$/.test(el.tagName)) return;
+  for (const n of el.childNodes) {
+    if (n.nodeType === 1) translateShell(n);
+    else if (n.nodeType === 3 && n.nodeValue.trim()) {
+      if (!SHELL_EN.has(n)) SHELL_EN.set(n, n.nodeValue);
+      const en = SHELL_EN.get(n), key = en.trim();
+      n.nodeValue = en.replace(key, tr(key));
+    }
+  }
+}
+function applyLang() { document.documentElement.lang = LANG; translateShell(document.body); }
+function setLanguage(l) {
+  PF.lang = setLang(l); Prefs.save(); applyLang();
+  recompute(); renderAll(); renderStart(); if (S.startForm) S.startForm.relabel(); renderAddMenu(); renderExportMenu();
+  const cv = $('#view3d canvas'); if (cv) cv.setAttribute('aria-label', tr('3D view of the stage'));
+}
 const planMode = () => (PF.mode === 'simple' && PF.planMode === 'power' ? 'data' : PF.planMode);
 const faceMode = () => (PF.mode === 'simple' && PF.face === 'power' ? 'cabinets' : PF.face);
 
@@ -164,14 +198,14 @@ function updateSavePill() {
   const el = $('#save-pill'); if (!el) return;
   const st = Store.state, mode = Store.mode();
   let s = st, txt;
-  if (S.project && S.project.example && S.pristine) { s = 'idle'; txt = 'Example project. Your changes save automatically'; }
-  else if (S.project && S.fresh && S.pristine && st !== 'error' && st !== 'off') { s = 'idle'; txt = mode === 'cloud' ? 'Saves to your account as soon as you change something' : mode === 'local' ? 'Saves in this browser as soon as you change something' : 'Not saved'; }
-  else if (st === 'saving') txt = 'Saving…';
-  else if (st === 'saved') txt = 'Saved to your account';
-  else if (st === 'local') txt = mode === 'cloud' ? 'Saved' : 'Saved in this browser';
-  else if (st === 'error') txt = 'Not saved yet, retrying on next change';
-  else if (st === 'off') txt = 'Not saved: storage is blocked. Use Export › Project file';
-  else txt = mode === 'cloud' ? 'Saves to your account' : mode === 'local' ? 'Saves in this browser' : 'Not saved';
+  if (S.project && S.project.example && S.pristine) { s = 'idle'; txt = tr('Example project. Your changes save automatically'); }
+  else if (S.project && S.fresh && S.pristine && st !== 'error' && st !== 'off') { s = 'idle'; txt = mode === 'cloud' ? tr('Saves to your account as soon as you change something') : mode === 'local' ? tr('Saves in this browser as soon as you change something') : tr('Not saved'); }
+  else if (st === 'saving') txt = tr('Saving…');
+  else if (st === 'saved') txt = tr('Saved to your account');
+  else if (st === 'local') txt = mode === 'cloud' ? tr('Saved') : tr('Saved in this browser');
+  else if (st === 'error') txt = tr('Not saved yet, retrying on next change');
+  else if (st === 'off') txt = tr('Not saved: storage is blocked. Use Export › Project file');
+  else txt = mode === 'cloud' ? tr('Saves to your account') : mode === 'local' ? tr('Saves in this browser') : tr('Not saved');
   el.dataset.s = s; el.textContent = txt;
 }
 
@@ -225,26 +259,26 @@ function renderTabs() {
     return `<button class="tab" role="tab" aria-selected="${s.id === S.activeId}" data-tab="${esc(s.id)}"><span class="dot" style="background:${s.color}"></span>${esc(s.name)}<span class="meta">${c ? `${c.cols}×${c.rows}` : ''}</span></button>`;
   }).join('');
   const pl = S.plan;
-  const total = t ? `<span class="desc" style="margin-left:auto">Project: <b>${t.screens}</b> screen${t.screens === 1 ? '' : 's'} · <b>${fmtInt(t.cabinets)}</b> cabinets · <b>${fmtNum(t.pixels / 1e6, 2)}</b> Mpx · <b>${t.ports}</b> data port${t.ports === 1 ? '' : 's'}${t.backupPorts ? ` + ${t.backupPorts} backup` : ''}${pl ? ` · <b>${pl.count} × ${esc(pl.model.name)}</b>` : ''}${t.wMax !== null ? ` · <b>${fmtW(t.wMax)}</b> max` : ''}${t.weight !== null ? ` · <b>${fmtKg(t.weight)}</b>` : ''}</span>` : '';
-  box.innerHTML = `<span class="tabs-label">Screens</span>${tabs}${total}`;
+  const total = t ? `<span class="desc" style="margin-left:auto">${tr('Project:')} ${trn(t.screens, '<b>{n}</b> screen', '<b>{n}</b> screens')} · ${trn(t.cabinets, '<b>{n}</b> cabinet', '<b>{n}</b> cabinets')} · <b>${fmtNum(t.pixels / 1e6, 2)}</b> Mpx · ${trn(t.ports, '<b>{n}</b> data port', '<b>{n}</b> data ports')}${t.backupPorts ? trn(t.backupPorts, ' + {n} backup', ' + {n} backup') : ''}${pl ? ` · <b>${pl.count} × ${esc(pl.model.name)}</b>` : ''}${t.wMax !== null ? tr(' · <b>{w}</b> max', { w: fmtW(t.wMax) }) : ''}${t.weight !== null ? ` · <b>${fmtKg(t.weight)}</b>` : ''}</span>` : '';
+  box.innerHTML = `<span class="tabs-label">${tr('Screens')}</span>${tabs}${total}`;
 }
 
 /* ----- screen properties row ----- */
 function renderProps() {
   const s = active(); const box = $('#screen-props');
-  if (!s) { box.innerHTML = '<div class="empty">No screens yet. Use Add screen above.</div>'; return; }
+  if (!s) { box.innerHTML = `<div class="empty">${tr('No screens yet. Use Add screen above.')}</div>`; return; }
   box.innerHTML = `
-    <label class="fld fld-wide"><span>Screen name</span><input type="text" id="sp-name" value="${esc(s.name)}" data-bind="name" data-type="str" autocomplete="off"></label>
-    <label class="fld"><span>Type</span><select id="sp-kind" data-bind="kind" data-type="str">${KIND_ORDER.map((k) => `<option value="${k}"${s.kind === k ? ' selected' : ''}>${KINDS[k].label}</option>`).join('')}</select></label>
-    <div class="fld"><span>Colour</span><div class="swatches" style="display:grid;grid-template-columns:repeat(4,22px);gap:4px">${SCREEN_COLORS.map((c) => `<button class="sw" style="background:${c}" data-color="${c}" aria-pressed="${s.color === c}" aria-label="Use colour ${c}"></button>`).join('')}</div></div>
-    <label class="fld"><span>Centre X</span><div class="unit-in"><input type="number" id="sp-x" step="50" value="${s.x}" data-bind="x" data-type="num"><i>mm</i></div></label>
-    <label class="fld"><span>Bottom height</span><div class="unit-in"><input type="number" id="sp-y" step="50" min="0" value="${s.y}" data-bind="y" data-type="num"><i>mm</i></div></label>
-    <label class="fld pro" title="Distance in front of the main screen line, toward the audience. Used by the 3D view."><span>Forward Z</span><div class="unit-in"><input type="number" id="sp-z" step="100" value="${s.z}" data-bind="z" data-type="num"><i>mm</i></div></label>
-    <label class="fld pro" title="Turns the screen around its vertical centre line. Positive turns its face to the right as seen from the audience, so use + on a left-side screen and − on a right-side screen to angle them toward the centre."><span>Yaw (+ faces right)</span><div class="unit-in"><input type="number" id="sp-yaw" step="1" min="-180" max="180" value="${s.yaw}" data-bind="yaw" data-type="num"><i>°</i></div></label>
+    <label class="fld fld-wide"><span>${tr('Screen name')}</span><input type="text" id="sp-name" value="${esc(s.name)}" data-bind="name" data-type="str" autocomplete="off"></label>
+    <label class="fld"><span>${tr('Type')}</span><select id="sp-kind" data-bind="kind" data-type="str">${KIND_ORDER.map((k) => `<option value="${k}"${s.kind === k ? ' selected' : ''}>${KINDS[k].label}</option>`).join('')}</select></label>
+    <div class="fld"><span>${tr('Colour')}</span><div class="swatches" style="display:grid;grid-template-columns:repeat(4,22px);gap:4px">${SCREEN_COLORS.map((c) => `<button class="sw" style="background:${c}" data-color="${c}" aria-pressed="${s.color === c}" aria-label="${tr('Use colour {c}', { c })}"></button>`).join('')}</div></div>
+    <label class="fld"><span>${tr('Centre X')}</span><div class="unit-in"><input type="number" id="sp-x" step="50" value="${s.x}" data-bind="x" data-type="num"><i>mm</i></div></label>
+    <label class="fld"><span>${tr('Bottom height')}</span><div class="unit-in"><input type="number" id="sp-y" step="50" min="0" value="${s.y}" data-bind="y" data-type="num"><i>mm</i></div></label>
+    <label class="fld pro" title="${tr('Distance in front of the main screen line, toward the audience. Used by the 3D view.')}"><span>${tr('Forward Z')}</span><div class="unit-in"><input type="number" id="sp-z" step="100" value="${s.z}" data-bind="z" data-type="num"><i>mm</i></div></label>
+    <label class="fld pro" title="${tr('Turns the screen around its vertical centre line. Positive turns its face to the right as seen from the audience, so use + on a left-side screen and − on a right-side screen to angle them toward the centre.')}"><span>${tr('Yaw (+ faces right)')}</span><div class="unit-in"><input type="number" id="sp-yaw" step="1" min="-180" max="180" value="${s.yaw}" data-bind="yaw" data-type="num"><i>°</i></div></label>
     <div class="prop-actions">
-      <button class="btn icon" data-act="dup" title="Duplicate screen (Ctrl+D)" aria-label="Duplicate screen"><svg class="ico"><use href="#i-copy"/></svg></button>
-      <button class="btn icon" data-act="mirror" title="Duplicate, mirrored across the centre line" aria-label="Duplicate mirrored"><svg class="ico"><use href="#i-mirror"/></svg></button>
-      <button class="btn icon danger" data-act="delete" title="Delete screen (Del)" aria-label="Delete screen"><svg class="ico"><use href="#i-trash"/></svg></button>
+      <button class="btn icon" data-act="dup" title="${tr('Duplicate screen (Ctrl+D)')}" aria-label="${tr('Duplicate screen')}"><svg class="ico"><use href="#i-copy"/></svg></button>
+      <button class="btn icon" data-act="mirror" title="${tr('Duplicate, mirrored across the centre line')}" aria-label="${tr('Duplicate mirrored')}"><svg class="ico"><use href="#i-mirror"/></svg></button>
+      <button class="btn icon danger" data-act="delete" title="${tr('Delete screen (Del)')}" aria-label="${tr('Delete screen')}"><svg class="ico"><use href="#i-trash"/></svg></button>
     </div>`;
 }
 function syncPropsValues() {
@@ -260,12 +294,12 @@ function panelOptions(selected) {
   const opt = (p) => `<option value="${esc(p.id)}"${p.id === selected ? ' selected' : ''}>${esc((proj.find((c) => c.id === p.id) || p).name)}</option>`;
   const lib = Lib.all(), groups = new Map();
   for (const p of [...lib].sort(byBrandModel)) { const b = p.brand || ''; if (!groups.has(b)) groups.set(b, []); groups.get(b).push(p); }
-  let html = [...groups].map(([b, list]) => `<optgroup label="${esc(b || 'Your panels')}">${list.map(opt).join('')}</optgroup>`).join('');
+  let html = [...groups].map(([b, list]) => `<optgroup label="${esc(b || tr('Your panels'))}">${list.map(opt).join('')}</optgroup>`).join('');
   const ids = new Set(lib.map((p) => p.id)), only = proj.filter((p) => !ids.has(p.id));
-  if (only.length) html += `<optgroup label="This project only">${only.map(opt).join('')}</optgroup>`;
-  return html + `<optgroup label="Generic presets">${BUILTIN_PANELS.map(opt).join('')}</optgroup>`;
+  if (only.length) html += `<optgroup label="${tr('This project only')}">${only.map(opt).join('')}</optgroup>`;
+  return html + `<optgroup label="${tr('Generic presets')}">${BUILTIN_PANELS.map(opt).join('')}</optgroup>`;
 }
-const CORNER_NAMES = { bl: 'bottom left', br: 'bottom right', tl: 'top left', tr: 'top right' };
+const CORNER_NAMES = { get bl() { return tr('bottom left'); }, get br() { return tr('bottom right'); }, get tl() { return tr('top left'); }, get tr() { return tr('top right'); } };
 function cornerBtn(k, cur, dir) {
   const pos = { tl: [4, 4], tr: [14, 4], bl: [4, 14], br: [14, 14] }[k];
   const dx = k[1] === 'l' ? 1 : -1, dy = k[0] === 'b' ? -1 : 1;
@@ -273,66 +307,67 @@ function cornerBtn(k, cur, dir) {
   const head = dir === 'v'
     ? `M${end[0]} ${end[1]} L${end[0] - 2.6} ${end[1] - dy * 3.6} L${end[0] + 2.6} ${end[1] - dy * 3.6}Z`
     : `M${end[0]} ${end[1]} L${end[0] - dx * 3.6} ${end[1] - 2.6} L${end[0] - dx * 3.6} ${end[1] + 2.6}Z`;
-  return `<button data-corner-v="${k}" aria-pressed="${cur === k}" title="Start ${CORNER_NAMES[k]}" aria-label="Start ${CORNER_NAMES[k]}"><svg viewBox="0 0 18 18"><circle cx="${pos[0]}" cy="${pos[1]}" r="2.3" fill="currentColor"/><path d="M${pos[0]} ${pos[1]} L${end[0]} ${end[1]}" stroke="currentColor" stroke-width="1.6"/><path d="${head}" fill="currentColor"/></svg></button>`;
+  const start = tr('Start {corner}', { corner: CORNER_NAMES[k] });
+  return `<button data-corner-v="${k}" aria-pressed="${cur === k}" title="${start}" aria-label="${start}"><svg viewBox="0 0 18 18"><circle cx="${pos[0]}" cy="${pos[1]}" r="2.3" fill="currentColor"/><path d="M${pos[0]} ${pos[1]} L${end[0]} ${end[1]}" stroke="currentColor" stroke-width="1.6"/><path d="${head}" fill="currentColor"/></svg></button>`;
 }
 function numField(id, label, bind, val, o = {}) {
   return `<label class="fld"><span>${label}</span><div class="unit-in"><input type="number" id="${id}" value="${val}" data-bind="${bind}" data-type="${o.type || 'num'}"${o.min !== undefined ? ` min="${o.min}"` : ''}${o.max !== undefined ? ` max="${o.max}"` : ''} step="${o.step || 1}"><i>${o.unit || ''}</i></div></label>`;
 }
 function sizeBody(s) {
   if (s.sizeMode === 'meters') {
-    return `<div class="row2">${numField('cf-tw', 'Width', 'tw', s.tw, { min: 0.1, max: 200, step: 0.1, unit: 'm' })}${numField('cf-th', 'Height', 'th', s.th, { min: 0.1, max: 100, step: 0.1, unit: 'm' })}</div>
-      <label class="fld"><span>Rounding</span><select id="cf-fit" data-bind="fit" data-type="str">
-        <option value="nearest"${s.fit === 'nearest' ? ' selected' : ''}>Nearest whole cabinet</option>
-        <option value="down"${s.fit === 'down' ? ' selected' : ''}>Fit inside the size (round down)</option>
-        <option value="up"${s.fit === 'up' ? ' selected' : ''}>Cover the size (round up)</option></select></label>`;
+    return `<div class="row2">${numField('cf-tw', tr('Width'), 'tw', s.tw, { min: 0.1, max: 200, step: 0.1, unit: 'm' })}${numField('cf-th', tr('Height'), 'th', s.th, { min: 0.1, max: 100, step: 0.1, unit: 'm' })}</div>
+      <label class="fld"><span>${tr('Rounding')}</span><select id="cf-fit" data-bind="fit" data-type="str">
+        <option value="nearest"${s.fit === 'nearest' ? ' selected' : ''}>${tr('Nearest whole cabinet')}</option>
+        <option value="down"${s.fit === 'down' ? ' selected' : ''}>${tr('Fit inside the size (round down)')}</option>
+        <option value="up"${s.fit === 'up' ? ' selected' : ''}>${tr('Cover the size (round up)')}</option></select></label>`;
   }
   if (s.sizeMode === 'mix') {
-    return `<label class="fld"><span>Small panel (fills the rows above)</span><select id="cf-msmall" data-bind="mix.small" data-type="str">${panelOptions(s.mix.small)}</select></label>
-      <label class="fld"><span>Large panel (used first, from the bottom)</span><select id="cf-mbig" data-bind="mix.big" data-type="str">${panelOptions(s.mix.big)}</select></label>
-      <div class="row3">${numField('cf-mw', 'Width', 'mix.w', s.mix.w, { min: 0.1, max: 200, step: 0.1, unit: 'm' })}${numField('cf-mh', 'Height', 'mix.h', s.mix.h, { min: 0.1, max: 100, step: 0.1, unit: 'm' })}${numField('cf-mstock', 'Large in stock', 'mix.stock', s.mix.stock, { type: 'int', min: 0, max: 100000, step: 1 })}</div>`;
+    return `<label class="fld"><span>${tr('Small panel (fills the rows above)')}</span><select id="cf-msmall" data-bind="mix.small" data-type="str">${panelOptions(s.mix.small)}</select></label>
+      <label class="fld"><span>${tr('Large panel (used first, from the bottom)')}</span><select id="cf-mbig" data-bind="mix.big" data-type="str">${panelOptions(s.mix.big)}</select></label>
+      <div class="row3">${numField('cf-mw', tr('Width'), 'mix.w', s.mix.w, { min: 0.1, max: 200, step: 0.1, unit: 'm' })}${numField('cf-mh', tr('Height'), 'mix.h', s.mix.h, { min: 0.1, max: 100, step: 0.1, unit: 'm' })}${numField('cf-mstock', tr('Large in stock'), 'mix.stock', s.mix.stock, { type: 'int', min: 0, max: 100000, step: 1 })}</div>`;
   }
-  return `<div class="row2">${numField('cf-cols', 'Columns', 'cols', s.cols, { type: 'int', min: 1, max: 200, step: 1 })}${numField('cf-rows', 'Rows', 'rows', s.rows, { type: 'int', min: 1, max: 100, step: 1 })}</div>`;
+  return `<div class="row2">${numField('cf-cols', tr('Columns'), 'cols', s.cols, { type: 'int', min: 1, max: 200, step: 1 })}${numField('cf-rows', tr('Rows'), 'rows', s.rows, { type: 'int', min: 1, max: 100, step: 1 })}</div>`;
 }
 function renderCfg() {
   const s = active(); const box = $('#cfg');
   if (!s) { box.innerHTML = ''; return; }
   const d = s.data;
   box.innerHTML = `
-  <div class="card"><div class="card-head"><h3><span class="step">1</span>Panel</h3><div class="tools"><button class="btn sm" data-act="panels">Your panels</button><button class="btn sm" data-act="panel-new"><svg class="ico"><use href="#i-plus"/></svg>New panel</button></div></div>
+  <div class="card"><div class="card-head"><h3><span class="step">1</span>${tr('Panel')}</h3><div class="tools"><button class="btn sm" data-act="panels">${tr('Your panels')}</button><button class="btn sm" data-act="panel-new"><svg class="ico"><use href="#i-plus"/></svg>${tr('New panel')}</button></div></div>
     <div class="card-body">
-      ${s.sizeMode === 'mix' ? '<div class="desc">Mixed mode uses the two panels chosen under Size.</div>' : `<select id="cf-panel" data-bind="panel" data-type="str" aria-label="Panel model">${panelOptions(s.panel)}</select>`}
+      ${s.sizeMode === 'mix' ? `<div class="desc">${tr('Mixed mode uses the two panels chosen under Size.')}</div>` : `<select id="cf-panel" data-bind="panel" data-type="str" aria-label="${tr('Panel model')}">${panelOptions(s.panel)}</select>`}
       <div class="desc" data-ro="panel"></div>
     </div></div>
-  <div class="card"><div class="card-head"><h3><span class="step">2</span>Shape</h3></div>
+  <div class="card"><div class="card-head"><h3><span class="step">2</span>${tr('Shape')}</h3></div>
     <div class="card-body">
-      <div class="seg full" data-seg="shape">${segBtn('flat', 'Flat', s.shape)}${segBtn('concave', 'Curved in', s.shape)}${segBtn('convex', 'Curved out', s.shape)}</div>
-      ${s.shape !== 'flat' ? `${numField('cf-angle', 'Angle between columns', 'angle', s.angle, { min: 0.5, max: 45, step: 0.5, unit: '°' })}<div class="readout" data-ro="curve"></div>` : '<div class="desc" style="color:var(--ink-3)">Curved in wraps toward the audience, curved out wraps away (for pillars and cylinders).</div>'}
+      <div class="seg full" data-seg="shape">${segBtn('flat', tr('Flat'), s.shape)}${segBtn('concave', tr('Curved in'), s.shape)}${segBtn('convex', tr('Curved out'), s.shape)}</div>
+      ${s.shape !== 'flat' ? `${numField('cf-angle', tr('Angle between columns'), 'angle', s.angle, { min: 0.5, max: 45, step: 0.5, unit: '°' })}<div class="readout" data-ro="curve"></div>` : `<div class="desc" style="color:var(--ink-3)">${tr('Curved in wraps toward the audience, curved out wraps away (for pillars and cylinders).')}</div>`}
     </div></div>
-  <div class="card"><div class="card-head"><h3><span class="step">3</span>Size</h3></div>
+  <div class="card"><div class="card-head"><h3><span class="step">3</span>${tr('Size')}</h3></div>
     <div class="card-body">
-      <div class="seg full" data-seg="sizeMode">${segBtn('grid', 'Columns × rows', s.sizeMode)}${segBtn('meters', 'Metres', s.sizeMode)}${segBtn('mix', 'Mixed', s.sizeMode, 'pro')}</div>
+      <div class="seg full" data-seg="sizeMode">${segBtn('grid', tr('Columns × rows'), s.sizeMode)}${segBtn('meters', tr('Metres'), s.sizeMode)}${segBtn('mix', tr('Mixed'), s.sizeMode, 'pro')}</div>
       ${sizeBody(s)}
       <div class="readout" data-ro="size"></div>
       <div data-ro="sugg"></div>
       <div data-ro="holes"></div>
       <div data-ro="warn"></div>
     </div></div>
-  <div class="card"><div class="card-head"><h3><span class="step">4</span>Signal and power</h3></div>
+  <div class="card"><div class="card-head"><h3><span class="step">4</span>${tr('Signal and power')}</h3></div>
     <div class="card-body">
       <div class="sigrow">
-        <span class="lbl">Input at</span>
+        <span class="lbl">${tr('Input at')}</span>
         <div class="corner" data-corner>${['tl', 'tr', 'bl', 'br'].map((k) => cornerBtn(k, d.start, d.dir)).join('')}</div>
-        <span class="lbl">Run along</span>
-        <div class="seg" data-seg="data.dir">${segBtn('h', 'Rows', d.dir)}${segBtn('v', 'Columns', d.dir)}</div>
-        <span class="lbl pro">Pattern</span>
-        <div class="seg pro" data-seg="data.path">${segBtn('snake', 'Snake', d.path)}${segBtn('z', 'Z return', d.path)}</div>
-        <span class="lbl pro">Per port</span>
-        <div class="seg pro" data-seg="data.split">${segBtn('lines', d.dir === 'v' ? 'Whole columns' : 'Whole rows', d.split)}${segBtn('fill', 'Fill to capacity', d.split)}</div>
+        <span class="lbl">${tr('Run along')}</span>
+        <div class="seg" data-seg="data.dir">${segBtn('h', tr('Rows'), d.dir)}${segBtn('v', tr('Columns'), d.dir)}</div>
+        <span class="lbl pro">${tr('Pattern')}</span>
+        <div class="seg pro" data-seg="data.path">${segBtn('snake', tr('Snake'), d.path)}${segBtn('z', tr('Z return'), d.path)}</div>
+        <span class="lbl pro">${tr('Per port')}</span>
+        <div class="seg pro" data-seg="data.split">${segBtn('lines', d.dir === 'v' ? tr('Whole columns') : tr('Whole rows'), d.split)}${segBtn('fill', tr('Fill to capacity'), d.split)}</div>
       </div>
       <div class="readout" data-ro="data"></div>
       <div class="readout pro" data-ro="power"></div>
     </div></div>
-  <div class="card"><div class="card-head"><h3><span class="step">5</span>Mounting</h3></div>
+  <div class="card"><div class="card-head"><h3><span class="step">5</span>${tr('Mounting')}</h3></div>
     <div class="card-body">
       <div class="seg full" data-seg="mount">${MOUNT_ORDER.map((k) => segBtn(k, MOUNTS[k].label, s.mount)).join('')}</div>
       ${s.mount === 'ground' ? groundHtml(s) : ''}
@@ -342,94 +377,93 @@ function renderCfg() {
 }
 function ctrlSummary(pl) {
   const D = pl.model, outs = sum(pl.units, (u) => u.used);
-  let t = `Controller for the whole project: <b>${pl.count} × NovaStar ${esc(D.name)}</b>${pl.auto ? ' (suggested)' : ''} · ${pl.count === 1 ? `${outs} of ${D.ports} outputs` : `${fmtInt(outs)} outputs on ${pl.count} units${pl.count <= 4 ? ` (${pl.units.map((u) => u.used).join(' + ')})` : ''}`} · ${fmtNum(pl.pixels / 1e6, 2)} M px${pl.count === 1 ? ` of ${fmtNum(D.capacity / 1e6, 2)} M` : ''}`;
+  let t = `${tr('Controller for the whole project:')} <b>${pl.count} × NovaStar ${esc(D.name)}</b>${pl.auto ? tr(' (suggested)') : ''} · ${pl.count === 1 ? tr('{used} of {all} outputs', { used: outs, all: D.ports }) : `${tr('{n} outputs on {units} units', { n: fmtInt(outs), units: pl.count })}${pl.count <= 4 ? ` (${pl.units.map((u) => u.used).join(' + ')})` : ''}`} · ${fmtNum(pl.pixels / 1e6, 2)} M px${pl.count === 1 ? tr(' of {m} M', { m: fmtNum(D.capacity / 1e6, 2) }) : ''}`;
   if (pl.warnings.length) t += pl.warnings.map((w) => `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${esc(w)}</span></div>`).join('');
   return t;
 }
 // ground stack: H-frames every N beams, optional posts between, frame height, and per-joint changes (RO.joints)
 function groundHtml(s) {
   const g = s.gs || defaultGroundStack();
-  return `<div class="row2">${numField('cf-gs-every', 'H-frame every', 'gs.every', g.every, { type: 'int', min: 1, max: 200, step: 1, unit: g.every === 1 ? 'beam' : 'beams' })}
-      <label class="fld"><span>Frame height</span><div class="unit-in"><input type="number" id="cf-gs-height" data-bind="gs.height" data-type="numopt" min="0.3" max="30" step="0.1" value="${g.height ?? ''}" placeholder="auto"><i>m</i></div></label></div>
-    <div class="row2">${numField('cf-gs-arms', 'Arms to the screen', 'gs.arms', g.arms ?? 1, { type: 'int', min: 0, max: 10, step: 1, unit: 'each' })}
-      <div class="desc" style="align-self:end;padding-bottom:6px">per H-frame or post, spread evenly up the screen</div></div>
-    <label class="chk"><input type="checkbox" data-gs="posts"${g.posts ? ' checked' : ''}> Posts between the H-frames</label>
+  return `<div class="row2">${numField('cf-gs-every', tr('H-frame every'), 'gs.every', g.every, { type: 'int', min: 1, max: 200, step: 1, unit: trnc('every', g.every, 'beam', 'beams') })}
+      <label class="fld"><span>${tr('Frame height')}</span><div class="unit-in"><input type="number" id="cf-gs-height" data-bind="gs.height" data-type="numopt" min="0.3" max="30" step="0.1" value="${g.height ?? ''}" placeholder="${tr('auto')}"><i>m</i></div></label></div>
+    <div class="row2">${numField('cf-gs-arms', tr('Arms to the screen'), 'gs.arms', g.arms ?? 1, { type: 'int', min: 0, max: 10, step: 1, unit: tr('each') })}
+      <div class="desc" style="align-self:end;padding-bottom:6px">${tr('per H-frame or post, spread evenly up the screen')}</div></div>
+    <label class="chk"><input type="checkbox" data-gs="posts"${g.posts ? ' checked' : ''}> ${tr('Posts between the H-frames')}</label>
     <div data-ro="joints"></div>`;
 }
-function deltaTxt(d) { if (Math.abs(d) < 0.5) return 'exact'; return `${d > 0 ? '+' : '−'}${fmtNum(Math.abs(d) / 1000, 3)} m`; }
-function shortName(p) { return p.name.replace(/^Generic /, ''); }
+function deltaTxt(d) { if (Math.abs(d) < 0.5) return tr('exact'); return `${d > 0 ? '+' : '−'}${fmtNum(Math.abs(d) / 1000, 3)} m`; }
+const shortName = panelShort;
 const RO = {
   panel(s) {
     if (s.sizeMode === 'mix') return '';
     const p = getPanel(S.project, s.panel), lp = p.builtin ? null : Lib.find(p.id);
-    let t = `<b>${fmtNum(p.w, 1)} × ${fmtNum(p.h, 1)} mm</b> · ${p.px} × ${p.py} px · pitch <b>${fmtPitch(p)} mm</b><br>${p.kg !== null ? fmtNum(p.kg, 1) + ' kg' : 'weight not set'} · ${p.wMax !== null ? fmtInt(p.wMax) + ' W max' : 'power not set'}${p.wAvg !== null ? ' · ' + fmtInt(p.wAvg) + ' W typical' : ''}`;
-    if (p.builtin) return t + `<br><span class="mut">Generic preset with typical weight and power.</span> <button class="linkbtn" data-act="panel-copy">Save as your panel</button>`;
+    let t = `<b>${fmtNum(p.w, 1)} × ${fmtNum(p.h, 1)} mm</b> · ${p.px} × ${p.py} px · ${tr('pitch <b>{p} mm</b>', { p: fmtPitch(p) })}<br>${p.kg !== null ? fmtNum(p.kg, 1) + ' kg' : tr('weight not set')} · ${p.wMax !== null ? tr('{w} W max', { w: fmtInt(p.wMax) }) : tr('power not set')}${p.wAvg !== null ? ' · ' + tr('{w} W typical', { w: fmtInt(p.wAvg) }) : ''}`;
+    if (p.builtin) return t + `<br><span class="mut">${tr('Generic preset with typical weight and power.')}</span> <button class="linkbtn" data-act="panel-copy">${tr('Save as your panel')}</button>`;
     const own = Lib.isOwn(p.id), site = Lib.isSite(p.id);
-    const acts = [own || !lp ? '<button class="linkbtn" data-act="panel-edit">Edit</button>' : '', !lp ? '<button class="linkbtn" data-act="panel-keep">Add to your panels</button>' : ''].filter(Boolean);
-    t += `<br><span class="mut">${own ? 'In your panels' : site ? `From ${esc(Lib.site.file)}` : 'Only in this project'}</span>${acts.length ? ' · ' + acts.join(' · ') : ''}`;
-    if (lp && !samePanel(p, lp)) t += `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${own ? 'Your panels have' : `${esc(Lib.site.file)} has`} other values for this panel than this project. <button class="linkbtn" data-act="panel-update">Use the new values</button></span></div>`;
+    const acts = [own || !lp ? `<button class="linkbtn" data-act="panel-edit">${tr('Edit')}</button>` : '', !lp ? `<button class="linkbtn" data-act="panel-keep">${tr('Add to your panels')}</button>` : ''].filter(Boolean);
+    t += `<br><span class="mut">${own ? tr('In your panels') : site ? tr('From {file}', { file: esc(Lib.site.file) }) : tr('Only in this project')}</span>${acts.length ? ' · ' + acts.join(' · ') : ''}`;
+    if (lp && !samePanel(p, lp)) t += `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${own ? tr('Your panels have other values for this panel than this project.') : tr('{file} has other values for this panel than this project.', { file: esc(Lib.site.file) })} <button class="linkbtn" data-act="panel-update">${tr('Use the new values')}</button></span></div>`;
     const stock = lp ? lp.stock : p.stock;
     if (stock !== null && stock !== undefined) {
       const used = projectUse(p.id);
       t += used > stock
-        ? `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>This project needs ${fmtInt(used)} of this panel, ${fmtInt(used - stock)} more than the ${fmtInt(stock)} in stock.</span></div>`
-        : `<br>Stock <b>${fmtInt(stock)}</b> · this project uses ${fmtInt(used)}`;
+        ? `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${tr('This project needs {used} of this panel, {more} more than the {stock} in stock.', { used: fmtInt(used), more: fmtInt(used - stock), stock: fmtInt(stock) })}</span></div>`
+        : `<br>${tr('Stock <b>{stock}</b> · this project uses {used}', { stock: fmtInt(stock), used: fmtInt(used) })}`;
     }
     return t;
   },
   curve(s, c) {
     if (!c.curve) return ''; const k = c.curve;
-    return `<b>${fmtNum(k.arc, 1)}°</b> in total${k.closed ? ' (full circle)' : ''} · radius <b>${fmtM(k.rIn, 2)} m</b> to the front · chord ${fmtM(k.chord, 2)} m · depth ${fmtM(k.depth, 2)} m<br><span style="color:var(--ink-3)">Calculated radius. Check that your curve brackets offer ${fmtNum(k.angle, 2)}°.</span>`;
+    return `${tr('<b>{arc}°</b> in total', { arc: fmtNum(k.arc, 1) })}${k.closed ? tr(' (full circle)') : ''} · ${tr('radius <b>{r} m</b> to the front · chord {c} m · depth {d} m', { r: fmtM(k.rIn, 2), c: fmtM(k.chord, 2), d: fmtM(k.depth, 2) })}<br><span style="color:var(--ink-3)">${tr('Calculated radius. Check that your curve brackets offer {a}°.', { a: fmtNum(k.angle, 2) })}</span>`;
   },
   size(s, c) {
-    let t = `<b>${c.cols} × ${c.rows}</b> cabinets = <b>${fmtSize(c.W, c.H)}</b> · ${fmtRes(c.resW, c.resH)} px`;
-    if ((s.sizeMode === 'meters' || s.sizeMode === 'mix') && c.info.target) { const d = c.info.target; t += `<br>Against ${fmtSize(d.w, d.h)}: ${deltaTxt(d.dw)} wide, ${deltaTxt(d.dh)} high`; }
-    if (s.sizeMode === 'mix' && c.info.mix) { const m = c.info.mix; t += `<br>${m.bigUsed} large in ${m.bigRows} row${m.bigRows === 1 ? '' : 's'} at the bottom, ${m.smallUsed} small above${m.bigLeft ? ` · ${m.bigLeft} large left over` : ''}`; }
+    let t = `${tr('<b>{cols} × {rows}</b> cabinets = <b>{size}</b>', { cols: c.cols, rows: c.rows, size: fmtSize(c.W, c.H) })} · ${fmtRes(c.resW, c.resH)} px`;
+    if ((s.sizeMode === 'meters' || s.sizeMode === 'mix') && c.info.target) { const d = c.info.target; t += `<br>${tr('Against {size}: {dw} wide, {dh} high', { size: fmtSize(d.w, d.h), dw: deltaTxt(d.dw), dh: deltaTxt(d.dh) })}`; }
+    if (s.sizeMode === 'mix' && c.info.mix) { const m = c.info.mix; t += `<br>${tr('{big} large in {rows} at the bottom, {small} small above', { big: fmtInt(m.bigUsed), rows: trnc('in', m.bigRows, '{n} row', '{n} rows'), small: fmtInt(m.smallUsed) })}${m.bigLeft ? tr(' · {n} large left over', { n: fmtInt(m.bigLeft) }) : ''}`; }
     return t;
   },
   sugg(s) {
     if (s.sizeMode !== 'grid') return '';
     const p = getPanel(S.project, s.panel); const list = suggest169(p, s.cols, s.rows);
     if (!list.length) return '';
-    return `<details class="more" id="sugg-details"${S.suggOpen ? ' open' : ''}><summary>Sizes close to 16:9</summary><div class="chips">${list.map((x) => `<button class="chip" data-sugg="${x.cols}x${x.rows}"><b>${x.cols} × ${x.rows}</b><span>${fmtSize(x.w, x.h)} · ${fmtRes(x.resW, x.resH)} · ${Math.abs(x.dev) < 0.0005 ? 'exact 16:9' : (x.dev > 0 ? '+' : '−') + Math.abs(x.dev * 100).toFixed(1) + '%'}</span></button>`).join('')}</div></details>`;
+    return `<details class="more" id="sugg-details"${S.suggOpen ? ' open' : ''}><summary>${tr('Sizes close to 16:9')}</summary><div class="chips">${list.map((x) => `<button class="chip" data-sugg="${x.cols}x${x.rows}"><b>${x.cols} × ${x.rows}</b><span>${fmtSize(x.w, x.h)} · ${fmtRes(x.resW, x.resH)} · ${Math.abs(x.dev) < 0.0005 ? tr('exact 16:9') : (x.dev > 0 ? '+' : '−') + fmtPct(Math.abs(x.dev), 1)}</span></button>`).join('')}</div></details>`;
   },
   holes(s, c) {
     return c.holes
-      ? `<div class="desc">${c.holes} cabinet position${c.holes === 1 ? ' is' : 's are'} left empty. <button class="linkbtn" data-act="holes-clear">Fill all</button></div>`
-      : '<div class="desc" style="color:var(--ink-3)">In the Cabinets plan, click a cabinet to leave its position empty.</div>';
+      ? `<div class="desc">${trn(c.holes, '{n} cabinet position is left empty.', '{n} cabinet positions are left empty.')} <button class="linkbtn" data-act="holes-clear">${tr('Fill all')}</button></div>`
+      : `<div class="desc" style="color:var(--ink-3)">${tr('In the Cabinets plan, click a cabinet to leave its position empty.')}</div>`;
   },
   warn(s, c) { return c.warnings.map((w) => `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${esc(w)}</span></div>`).join(''); },
   joints(s, c) {
     if (s.mount !== 'ground') return '';
-    const L = groundLayout(s, c.cols), sym = { H: 'H', P: '|', '-': '·' }, what = { H: 'H-frame', P: 'post', '-': 'nothing' };
-    const where = (j) => (j === 0 ? 'left end' : j === c.cols ? 'right end' : `between ${colLetter(j - 1)} and ${colLetter(j)}`);
+    const L = groundLayout(s, c.cols), sym = { H: 'H', P: '|', '-': '·' }, what = { H: tr('H-frame'), P: tr('post'), '-': tr('nothing') };
+    const where = (j) => (j === 0 ? tr('left end') : j === c.cols ? tr('right end') : tr('between {a} and {b}', { a: colLetter(j - 1), b: colLetter(j) }));
     const custom = Object.keys((s.gs && s.gs.over) || {}).length;
-    return `<div class="jt-row" role="group" aria-label="Joints from left to right">${L.map((v, j) => `<button class="jt" data-joint="${j}" data-v="${v}" title="Joint ${where(j)}: ${what[v]}" aria-label="Joint ${where(j)}: ${what[v]}">${sym[v]}</button>`).join('')}</div>
-      <div class="desc">The joints between ground beams, left to right: H = H-frame, | = post, · = nothing. Tap one to change it.${custom ? ` <button class="linkbtn" data-act="gs-reset">Back to the pattern</button>` : ''}</div>`;
+    return `<div class="jt-row" role="group" aria-label="${tr('Joints from left to right')}">${L.map((v, j) => { const t = tr('Joint {where}: {what}', { where: where(j), what: what[v] }); return `<button class="jt" data-joint="${j}" data-v="${v}" title="${t}" aria-label="${t}">${sym[v]}</button>`; }).join('')}</div>
+      <div class="desc">${tr('The joints between ground beams, left to right: H = H-frame, | = post, · = nothing. Tap one to change it.')}${custom ? ` <button class="linkbtn" data-act="gs-reset">${tr('Back to the pattern')}</button>` : ''}</div>`;
   },
   mount(s, c) {
     const k = c.support, m = k.mount;
-    const along = { flown: 'along the flying bars', ground: 'along the base beams' }[m];
-    const area = `front area ${fmtNum(k.frontArea, 2)} m²${c.curve ? ` (${fmtM(k.projW, 2)} m wide seen from the front)` : ''}`;
+    const area = tr('front area {a} m²', { a: fmtNum(k.frontArea, 2) }) + (c.curve ? tr(' ({w} m wide seen from the front)', { w: fmtM(k.projW, 2) }) : '');
     let t = c.weight === null
-      ? `Add a weight to the panel to see the loads · ${area}`
-      : `<b>${{ flown: 'Hanging weight', ground: 'Weight on the base' }[m]} ${fmtKg(c.weight)}</b> · ${fmtInt(k.kgPerM)} kg per metre ${along} · heaviest column ${fmtKg(c.heaviestCol.kg)}${m === 'ground' ? ` (${k.tallest.cabinets} cabinet${k.tallest.cabinets === 1 ? '' : 's'} high)` : ''} · centre of gravity ${fmtM(k.cog, 2)} m above the floor · ${area}`;
+      ? `${tr('Add a weight to the panel to see the loads')} · ${area}`
+      : `<b>${m === 'flown' ? tr('Hanging weight {kg}', { kg: fmtKg(c.weight) }) : tr('Weight on the base {kg}', { kg: fmtKg(c.weight) })}</b> · ${m === 'flown' ? tr('{kg} kg per metre along the flying bars', { kg: fmtInt(k.kgPerM) }) : tr('{kg} kg per metre along the base beams', { kg: fmtInt(k.kgPerM) })} · ${tr('heaviest column {kg}', { kg: fmtKg(c.heaviestCol.kg) })}${m === 'ground' ? ' ' + trn(k.tallest.cabinets, '({n} cabinet high)', '({n} cabinets high)') : ''} · ${tr('centre of gravity {h} m above the floor', { h: fmtM(k.cog, 2) })} · ${area}`;
     if (m === 'ground') {
       const L = groundLayout(s, c.cols), nH = L.filter((x) => x === 'H').length, nP = L.filter((x) => x === 'P').length;
       const na = groundArms(s);
-      t += `<br>${c.cols} ground beam${c.cols === 1 ? '' : 's'} with adjustable feet · behind: ${nH} H-frame${nH === 1 ? '' : 's'}${nP ? ` and ${nP} post${nP === 1 ? '' : 's'}` : ''}, ${fmtNum(groundFrameHeight(s, c), 2)} m high, on floor rails · ${na ? `${na} arm${na === 1 ? '' : 's'} each to the screen (${fmtInt((nH + nP) * na)} in all)` : 'not clamped to the screen'}`;
+      t += `<br>${trn(c.cols, '{n} ground beam with adjustable feet', '{n} ground beams with adjustable feet')} · ${tr('behind:')} ${trn(nH, '{n} H-frame', '{n} H-frames')}${nP ? ` ${tr('and')} ${trn(nP, '{n} post', '{n} posts')}` : ''}, ${tr('{h} m high, on floor rails', { h: fmtNum(groundFrameHeight(s, c), 2) })} · ${na ? `${trn(na, '{n} arm each to the screen', '{n} arms each to the screen')} ${tr('({n} in all)', { n: fmtInt((nH + nP) * na) })}` : tr('not clamped to the screen')}`;
     }
-    t += `<br>Build order: ${buildOrderText(m)}.<br><span style="color:var(--ink-3)">Cabinets only: ${m === 'flown' ? 'flying bars, chains' : 'ground beams, H-frames'}, cables and wind add to these. Have the rigging or structure designed and checked by a qualified person.</span>`;
+    t += `<br>${tr('Build order: {order}.', { order: buildOrderText(m) })}<br><span style="color:var(--ink-3)">${m === 'flown' ? tr('Cabinets only: flying bars, chains, cables and wind add to these. Have the rigging or structure designed and checked by a qualified person.') : tr('Cabinets only: ground beams, H-frames, cables and wind add to these. Have the rigging or structure designed and checked by a qualified person.')}</span>`;
     return t;
   },
   data(s, c) {
-    const st = S.project.settings; const busiest = c.ports.length ? Math.max(...c.ports.map((p) => p.load / p.cap)) : 0;
-    return `<b>${c.ports.length} data port${c.ports.length === 1 ? '' : 's'}${st.backup ? ` + ${c.ports.length} backup` : ''}</b> at ${fmtInt(st.portCapacity)} px each · busiest ${Math.round(busiest * 100)}% · <button class="linkbtn" data-act="settings">Ports and controller</button>${S.plan ? `<br>${ctrlSummary(S.plan)}` : ''}`;
+    const st = S.project.settings; const busiest = c.ports.length ? Math.max(...c.ports.map((p) => p.load / p.cap)) : 0, n = c.ports.length;
+    return `<b>${trn(n, '{n} data port', '{n} data ports')}${st.backup ? trn(n, ' + {n} backup', ' + {n} backup') : ''}</b> ${tr('at {px} px each', { px: fmtInt(st.portCapacity) })} · ${tr('busiest {pct}', { pct: fmtPct(busiest) })} · <button class="linkbtn" data-act="settings">${tr('Ports and controller')}</button>${S.plan ? `<br>${ctrlSummary(S.plan)}` : ''}`;
   },
   power(s, c) {
     const st = S.project.settings;
-    if (!c.power) return 'Circuits need power values on the panel. Add your panel with its datasheet figures (New panel).';
-    return `<b>${c.power.circuits.length} power circuit${c.power.circuits.length === 1 ? '' : 's'}</b> of ${fmtInt(st.circuitAmps)} A at ${fmtInt(st.voltage)} V, loaded to ${Math.round(st.loadFactor * 100)}% at power factor ${fmtNum(st.powerFactor, 2)} (${fmtInt(c.power.circuitW)} W each). Chains follow the data path.`;
+    if (!c.power) return tr('Circuits need power values on the panel. Add your panel with its datasheet figures (New panel).');
+    return `<b>${trn(c.power.circuits.length, '{n} power circuit', '{n} power circuits')}</b> ${tr('of {a} A at {v} V, loaded to {pct} at power factor {pf} ({w} W each)', { a: fmtInt(st.circuitAmps), v: fmtInt(st.voltage), pct: fmtPct(st.loadFactor), pf: fmtNum(st.powerFactor, 2), w: fmtInt(c.power.circuitW) })}. ${tr('Chains follow the data path.')}`;
   },
 };
 function refreshReadouts() {
@@ -447,35 +481,42 @@ function renderResults() {
   const minPitch = Math.min(...pitches);
   const busiest = c.ports.length ? Math.max(...c.ports.map((p) => p.load / p.cap)) : 0;
   const tiles = [
-    tileHtml('Size', fmtSize(c.W, c.H), c.curve ? `chord ${fmtM(c.curve.chord, 2)} m, depth ${fmtM(c.curve.depth, 2)} m` : `${fmtNum(c.area, 2)} m² of LED`),
-    tileHtml('Resolution', fmtRes(c.resW, c.resH), 'pixels, width × height'),
-    tileHtml('Pixels', fmtInt(c.pixels), c.holes ? `${c.holes} empty position${c.holes === 1 ? '' : 's'}` : 'all positions filled'),
-    tileHtml('Cabinets', fmtInt(c.count), Object.values(c.byPanel).map((b) => `${b.count} × ${esc(shortName(b.panel))}`).join(' + ')),
-    tileHtml('Aspect', c.ratio.text, fmtDelta(c.ratio.delta), '', Math.abs(c.ratio.delta) < 0.015 ? 'good' : ''),
-    tileHtml('Pixel pitch', `${pitches.map((x) => (Math.round(x * 1000) / 1000).toFixed(3)).join(' / ')} mm`, `min. viewing ≈ ${fmtNum(minPitch, 1)} m (1 m per mm rule of thumb)`),
-    tileHtml('Data ports', st.backup ? `${c.ports.length} + ${c.ports.length}` : String(c.ports.length), `${st.backup ? 'main + backup · ' : ''}${fmtInt(st.portCapacity)} px each · busiest ${Math.round(busiest * 100)}%`),
-    tileHtml('Power', c.wMax !== null ? fmtW(c.wMax) : '—', c.wMax !== null ? `max · ${fmtNum(c.wMax / (st.voltage * st.powerFactor), 1)} A at ${fmtInt(st.voltage)} V, PF ${fmtNum(st.powerFactor, 2)}` : 'no panel data'),
+    tileHtml(tr('Size'), fmtSize(c.W, c.H), c.curve ? tr('chord {c} m, depth {d} m', { c: fmtM(c.curve.chord, 2), d: fmtM(c.curve.depth, 2) }) : tr('{a} m² of LED', { a: fmtNum(c.area, 2) })),
+    tileHtml(tr('Resolution'), fmtRes(c.resW, c.resH), tr('pixels, width × height')),
+    tileHtml(tr('Pixels'), fmtInt(c.pixels), c.holes ? trn(c.holes, '{n} empty position', '{n} empty positions') : tr('all positions filled')),
+    tileHtml(tr('Cabinets'), fmtInt(c.count), Object.values(c.byPanel).map((b) => `${b.count} × ${esc(shortName(b.panel))}`).join(' + ')),
+    tileHtml(tr('Aspect'), c.ratio.text, fmtDelta(c.ratio.delta), '', Math.abs(c.ratio.delta) < 0.015 ? 'good' : ''),
+    tileHtml(tr('Pixel pitch'), `${pitches.map((x) => fmtDec(Math.round(x * 1000) / 1000, 3)).join(' / ')} mm`, tr('min. viewing ≈ {m} m (1 m per mm rule of thumb)', { m: fmtNum(minPitch, 1) })),
+    tileHtml(tr('Data ports'), st.backup ? `${c.ports.length} + ${c.ports.length}` : String(c.ports.length), `${st.backup ? tr('main + backup · ') : ''}${tr('{px} px each · busiest {pct}', { px: fmtInt(st.portCapacity), pct: fmtPct(busiest) })}`),
+    tileHtml(trc('tile', 'Power'), c.wMax !== null ? fmtW(c.wMax) : '—', c.wMax !== null ? tr('max · {a} A at {v} V, PF {pf}', { a: fmtNum(c.wMax / (st.voltage * st.powerFactor), 1), v: fmtInt(st.voltage), pf: fmtNum(st.powerFactor, 2) }) : tr('no panel data')),
   ];
   if (PF.mode === 'pro') tiles.push(
-    tileHtml('Circuits', c.power ? String(c.power.circuits.length) : '—', c.power ? `${fmtInt(st.circuitAmps)} A at ${Math.round(st.loadFactor * 100)}% load` : 'no panel data'),
-    tileHtml('Weight', c.weight !== null ? fmtKg(c.weight) : '—', c.weight !== null ? `${fmtNum(c.weight / Math.max(0.01, c.area), 1)} kg/m² · heaviest column ${fmtKg(c.heaviestCol.kg)}` : 'no panel data'));
-  box.innerHTML = `<div class="card-head"><h2>Results</h2><span class="results-head-meta">${esc(s.name)}${c.curve ? ` · curved ${c.curve.shape === 'concave' ? 'in' : 'out'}` : ''}</span></div><div class="tiles n${tiles.length}">${tiles.join('')}</div>`;
+    tileHtml(tr('Circuits'), c.power ? String(c.power.circuits.length) : '—', c.power ? tr('{a} A at {pct} load', { a: fmtInt(st.circuitAmps), pct: fmtPct(st.loadFactor) }) : tr('no panel data')),
+    tileHtml(tr('Weight'), c.weight !== null ? fmtKg(c.weight) : '—', c.weight !== null ? tr('{kgm} kg/m² · heaviest column {kg}', { kgm: fmtNum(c.weight / Math.max(0.01, c.area), 1), kg: fmtKg(c.heaviestCol.kg) }) : tr('no panel data')));
+  box.innerHTML = `<div class="card-head"><h2>${tr('Results')}</h2><span class="results-head-meta">${esc(s.name)}${c.curve ? ` · ${c.curve.shape === 'concave' ? tr('curved in') : tr('curved out')}` : ''}</span></div><div class="tiles n${tiles.length}">${tiles.join('')}</div>`;
 }
 
 /* ----- plan ----- */
+// legend rows for ports or circuits; the columns are as wide as the longest row needs (its values are
+// monospaced), so a longer text, in any language, never runs into the next one
+function lgGrid(items) {
+  const w = Math.max(230, ...items.map((x) => 76 + x.name.length * 9 + x.val.length * 7));
+  return `<div class="lg-grid" style="--lgw:${Math.ceil(w)}px">${items.map((x) => `<div class="lg"><span class="dot" style="background:${x.color}"></span><span class="name">${esc(x.name)}</span><span class="bar"><i style="width:${Math.min(100, x.share * 100).toFixed(1)}%;background:${x.color}"></i></span><span class="val">${esc(x.val)}</span></div>`).join('')}</div>`;
+}
 function legendHtml(mode, s, c) {
   const st = S.project.settings;
   if (mode === 'data') {
     const d = s.data;
-    return `<div class="sum"><b>${c.ports.length} data port${c.ports.length === 1 ? '' : 's'}</b> · ${d.path === 'z' ? 'Z return' : 'snake'} along ${d.dir === 'v' ? 'columns' : 'rows'} from the ${CORNER_NAMES[d.start]} · ${fmtInt(st.portCapacity)} px per port${st.backup ? ' · <b>BK</b> marks where each backup cable leaves the last cabinet' : ''}</div>
-      <div class="lg-grid${st.backup ? ' wide' : ''}">${c.ports.map((p) => { const pct = p.load / p.cap; const f = p.cells[0], l = p.cells[p.cells.length - 1]; return `<div class="lg"><span class="dot" style="background:${p.color}"></span><span class="name">${esc(p.label)}</span><span class="bar"><i style="width:${Math.min(100, pct * 100).toFixed(1)}%;background:${p.color}"></i></span><span class="val">${p.count} cab · in ${colLetter(f.c)}${f.r + 1}${st.backup ? ` · BK ${colLetter(l.c)}${l.r + 1}` : ''} · ${Math.round(pct * 100)}%</span></div>`; }).join('')}</div>`;
+    const route = tr('{path} along {dir} from the {corner}', { path: d.path === 'z' ? tr('Z return') : tr('snake'), dir: d.dir === 'v' ? trc('along', 'columns') : trc('along', 'rows'), corner: CORNER_NAMES[d.start] });
+    return `<div class="sum"><b>${trn(c.ports.length, '{n} data port', '{n} data ports')}</b> · ${route} · ${tr('{px} px per port', { px: fmtInt(st.portCapacity) })}${st.backup ? ` · ${tr('<b>BK</b> marks where each backup cable leaves the last cabinet')}` : ''}</div>
+      ${lgGrid(c.ports.map((p) => { const f = p.cells[0], l = p.cells[p.cells.length - 1]; return { color: p.color, name: p.label, share: p.load / p.cap, val: `${tr('{n} cab · in {at}', { n: p.count, at: `${colLetter(f.c)}${f.r + 1}` })}${st.backup ? ` · BK ${colLetter(l.c)}${l.r + 1}` : ''} · ${fmtPct(p.load / p.cap)}` }; }))}`;
   }
   if (mode === 'power') {
-    if (!c.power) return '<div class="sum">Power circuits need weight and power values on the panel. Use <b>New panel</b> to enter your datasheet figures.</div>';
-    return `<div class="sum"><b>${c.power.circuits.length} circuit${c.power.circuits.length === 1 ? '' : 's'}</b> of ${fmtInt(st.circuitAmps)} A at ${fmtInt(st.voltage)} V · ${fmtInt(c.power.circuitW)} W each at ${Math.round(st.loadFactor * 100)}% load and PF ${fmtNum(st.powerFactor, 2)} · sized on ${st.powerBasis === 'avg' ? 'typical' : 'maximum'} power</div>
-      <div class="lg-grid">${c.power.circuits.map((k) => { const pct = k.load / k.cap; return `<div class="lg"><span class="dot" style="background:${k.color}"></span><span class="name">${k.label}</span><span class="bar"><i style="width:${Math.min(100, pct * 100).toFixed(1)}%;background:${k.color}"></i></span><span class="val">${k.count} cab · ${fmtInt(k.load)} W · ${fmtNum(k.amps, 1)} A</span></div>`; }).join('')}</div>`;
+    if (!c.power) return `<div class="sum">${tr('Power circuits need weight and power values on the panel. Use <b>New panel</b> to enter your datasheet figures.')}</div>`;
+    return `<div class="sum"><b>${trn(c.power.circuits.length, '{n} circuit', '{n} circuits')}</b> ${tr('of {a} A at {v} V · {w} W each at {pct} load and PF {pf}', { a: fmtInt(st.circuitAmps), v: fmtInt(st.voltage), w: fmtInt(c.power.circuitW), pct: fmtPct(st.loadFactor), pf: fmtNum(st.powerFactor, 2) })} · ${st.powerBasis === 'avg' ? tr('sized on typical power') : tr('sized on maximum power')}</div>
+      ${lgGrid(c.power.circuits.map((k) => ({ color: k.color, name: k.label, share: k.load / k.cap, val: `${tr('{n} cab', { n: k.count })} · ${fmtInt(k.load)} W · ${fmtNum(k.amps, 1)} A` })))}`;
   }
-  return `<div class="sum">Numbers give the build order for a ${MOUNTS[s.mount].label.toLowerCase()} screen: ${buildOrderText(s.mount)}. <b>Click a cabinet</b> to leave its position empty; click again to fill it.</div>
+  return `<div class="sum">${s.mount === 'flown' ? tr('Numbers give the build order for a flown screen: {order}.', { order: buildOrderText(s.mount) }) : tr('Numbers give the build order for a ground stack screen: {order}.', { order: buildOrderText(s.mount) })} ${tr('<b>Click a cabinet</b> to leave its position empty; click again to fill it.')}</div>
     <div class="lg-grid">${Object.values(c.byPanel).map((b) => `<div class="lg"><span class="dot" style="background:${s.color}"></span><span class="name">${b.count}×</span><span class="val" style="grid-column:span 2;white-space:normal;font-family:var(--font-ui);font-size:12.5px">${esc(b.panel.name)} · ${fmtNum(b.panel.w, 1)} × ${fmtNum(b.panel.h, 1)} mm</span></div>`).join('')}</div>`;
 }
 function planPx(c, w, fs, dims, labels) {
@@ -485,7 +526,7 @@ function planPx(c, w, fs, dims, labels) {
 }
 function renderPlan() {
   const s = active(); const wrap = $('#plan-wrap'), svg = $('#plan-svg'), lg = $('#plan-legend');
-  if (!s || !S.comps[s.id]) { svg.innerHTML = ''; lg.innerHTML = '<div class="sum">Add a screen to see its plan.</div>'; return; }
+  if (!s || !S.comps[s.id]) { svg.innerHTML = ''; $('#plan-title').textContent = tr('Plan'); lg.innerHTML = `<div class="sum">${tr('Add a screen to see its plan.')}</div>`; return; }
   const c = S.comps[s.id]; const mode = planMode();
   $$('#plan-seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.plan === mode)));
   const w = Math.max(240, wrap.clientWidth);
@@ -497,7 +538,7 @@ function renderPlan() {
   drawPlan(pen, c, { x: fs * 0.5, y: fs * 0.5, w: w - fs, h: h - fs }, { mode, dims: PF.planDims, labels: PF.planLabels, pal: S.pal, fs, screenColor: s.color, prefix: S.project.settings.portPrefix, backup: S.project.settings.backup, interactive: mode === 'cabinets', minText: 7.5 });
   svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
   svg.innerHTML = pen.toString();
-  $('#plan-title').textContent = { cabinets: 'Plan · cabinets', data: 'Plan · data cabling', power: 'Plan · power' }[mode];
+  $('#plan-title').textContent = { cabinets: tr('Plan · cabinets'), data: tr('Plan · data cabling'), power: tr('Plan · power') }[mode];
   lg.innerHTML = legendHtml(mode, s, c);
 }
 
@@ -526,14 +567,14 @@ function addScreen(kind) {
   const k = KINDS[kind] || KINDS.free;
   const s = defaultScreen(kind);
   s.color = nextColor(S.project);
-  s.name = uniqueName(S.project, kind === 'main' ? 'Main screen' : k.label);
+  s.name = uniqueName(S.project, kind === 'main' ? tr('Main screen') : k.label);
   const comp = computeScreen(S.project, s);
   change((p) => {
     p.screens.push(s); placeByKind(p, s, comp, kind);
     S.activeId = s.id; S.selection = new Set([s.id]);
   }, { structural: true });
   S.view.fitted = false; renderStage();
-  toast(`Added ${s.name}`, { label: 'Undo', run: undo });
+  toast(tr('Added {name}', { name: s.name }), { label: tr('Undo'), run: undo });
 }
 
 /* ---------- a screen of your own size: the start card, and Add screen › Your own size ----------
@@ -546,15 +587,15 @@ function projectWith(id) {
 }
 function sizeFormHtml(kinds) {
   return `<div class="sf">
-    ${kinds ? `<label class="fld"><span>Type</span><select data-sf="kind">${KIND_ORDER.map((k) => `<option value="${k}">${KINDS[k].label}</option>`).join('')}</select></label>` : ''}
-    <label class="fld"><span>Panel</span><select data-sf="panel"></select></label>
-    <div class="sf-links"><button type="button" class="linkbtn" data-sf-act="new">New panel</button><button type="button" class="linkbtn" data-sf-act="lib">Your panels</button></div>
-    <div class="seg full" data-sf="unit" role="group" aria-label="Enter the size in"><button type="button" data-v="m">Metres</button><button type="button" data-v="cab">Cabinets</button></div>
+    ${kinds ? `<label class="fld"><span>${tr('Type')}</span><select data-sf="kind">${KIND_ORDER.map((k) => `<option value="${k}">${KINDS[k].label}</option>`).join('')}</select></label>` : ''}
+    <label class="fld"><span>${tr('Panel')}</span><select data-sf="panel"></select></label>
+    <div class="sf-links"><button type="button" class="linkbtn" data-sf-act="new">${tr('New panel')}</button><button type="button" class="linkbtn" data-sf-act="lib">${tr('Your panels')}</button></div>
+    <div class="seg full" data-sf="unit" role="group" aria-label="${tr('Enter the size in')}"><button type="button" data-v="m">${tr('Metres')}</button><button type="button" data-v="cab">${tr('Cabinets')}</button></div>
     <div class="row2">
-      <label class="fld"><span data-sf="wl">Width</span><div class="unit-in"><input type="number" data-sf="w" min="0" step="any"><i data-sf="wu">m</i></div></label>
-      <label class="fld"><span data-sf="hl">Height</span><div class="unit-in"><input type="number" data-sf="h" min="0" step="any"><i data-sf="hu">m</i></div></label>
+      <label class="fld"><span data-sf="wl">${tr('Width')}</span><div class="unit-in"><input type="number" data-sf="w" min="0" step="any"><i data-sf="wu">m</i></div></label>
+      <label class="fld"><span data-sf="hl">${tr('Height')}</span><div class="unit-in"><input type="number" data-sf="h" min="0" step="any"><i data-sf="hu">m</i></div></label>
     </div>
-    <label class="fld"><span>Mounting</span><select data-sf="mount">${MOUNT_ORDER.map((k) => `<option value="${k}">${MOUNTS[k].label}</option>`).join('')}</select></label>
+    <label class="fld"><span>${tr('Mounting')}</span><select data-sf="mount">${MOUNT_ORDER.map((k) => `<option value="${k}">${MOUNTS[k].label}</option>`).join('')}</select></label>
     <div class="readout" data-sf="out" aria-live="polite"></div>
   </div>`;
 }
@@ -581,7 +622,7 @@ function bindSizeForm(root, { kinds = false } = {}) {
   };
   const show = () => {
     const m = st.unit === 'm';
-    q('wl').textContent = m ? 'Width' : 'Columns'; q('hl').textContent = m ? 'Height' : 'Rows';
+    q('wl').textContent = m ? tr('Width') : tr('Columns'); q('hl').textContent = m ? tr('Height') : tr('Rows');
     q('wu').textContent = m ? 'm' : ''; q('hu').textContent = m ? 'm' : '';
     for (const [k, v] of [['w', m ? st.w : st.cols], ['h', m ? st.h : st.rows]]) { const el = q(k); el.step = m ? 'any' : '1'; el.inputMode = m ? 'decimal' : 'numeric'; if (document.activeElement !== el) el.value = String(Math.round(v * 1000) / 1000); }
     root.querySelectorAll('[data-sf="unit"] button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === st.unit)));
@@ -589,12 +630,12 @@ function bindSizeForm(root, { kinds = false } = {}) {
   };
   const preview = () => {
     const out = q('out');
-    if (!read()) { out.innerHTML = st.unit === 'm' ? 'Enter the width and height in metres.' : 'Enter the number of columns and rows.'; return null; }
+    if (!read()) { out.innerHTML = st.unit === 'm' ? tr('Enter the width and height in metres.') : tr('Enter the number of columns and rows.'); return null; }
     const c = computeScreen(projectWith(st.panel), screen()), lp = Lib.find(st.panel);
     const nb = (x) => x.replace(/ /g, '\u00a0');   // keep "20.5 kW max" on one line
-    let t = `<b>${c.cols} × ${c.rows}</b> cabinets = <b>${fmtSize(c.W, c.H)}</b><br>${nb(fmtRes(c.resW, c.resH) + ' px')} · ${nb(fmtInt(c.count) + ' cabinets')}${c.weight !== null ? ` · ${nb(fmtKg(c.weight))}` : ''}${c.wMax !== null ? ` · ${nb(fmtW(c.wMax) + ' max')}` : ''}`;
-    if (st.unit === 'm' && (Math.abs(c.W - st.w * 1000) > 0.5 || Math.abs(c.H - st.h * 1000) > 0.5)) t += `<br><span class="mut">Nearest whole cabinets to ${fmtSize(st.w * 1000, st.h * 1000)}</span>`;
-    if (lp && lp.stock !== null && c.count > lp.stock) t += `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>That is ${fmtInt(c.count - lp.stock)} more than the ${fmtInt(lp.stock)} in stock.</span></div>`;
+    let t = `${tr('<b>{cols} × {rows}</b> cabinets = <b>{size}</b>', { cols: c.cols, rows: c.rows, size: fmtSize(c.W, c.H) })}<br>${nb(fmtRes(c.resW, c.resH) + ' px')} · ${nb(trn(c.count, '{n} cabinet', '{n} cabinets'))}${c.weight !== null ? ` · ${nb(fmtKg(c.weight))}` : ''}${c.wMax !== null ? ` · ${nb(tr('{w} max', { w: fmtW(c.wMax) }))}` : ''}`;
+    if (st.unit === 'm' && (Math.abs(c.W - st.w * 1000) > 0.5 || Math.abs(c.H - st.h * 1000) > 0.5)) t += `<br><span class="mut">${tr('Nearest whole cabinets to {size}', { size: fmtSize(st.w * 1000, st.h * 1000) })}</span>`;
+    if (lp && lp.stock !== null && c.count > lp.stock) t += `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${tr('That is {more} more than the {stock} in stock.', { more: fmtInt(c.count - lp.stock), stock: fmtInt(lp.stock) })}</span></div>`;
     out.innerHTML = t;
     return c;
   };
@@ -621,8 +662,10 @@ function bindSizeForm(root, { kinds = false } = {}) {
   const off = Lib.on(() => { fillPanels(); preview(); });
   fillPanels(); show(); preview();
   return {
-    values() { if (!preview()) { toast(st.unit === 'm' ? 'Enter the width and height in metres.' : 'Enter the number of columns and rows.'); return null; } return Object.assign({}, st); },
+    values() { if (!preview()) { toast(st.unit === 'm' ? tr('Enter the width and height in metres.') : tr('Enter the number of columns and rows.')); return null; } return Object.assign({}, st); },
     refresh() { fillPanels(); preview(); }, off,
+    // after a change of language: the same form, with its values, in the new language
+    relabel() { root.innerHTML = sizeFormHtml(kinds); fillPanels(); show(); preview(); },
   };
 }
 function addSizedScreen(v) {
@@ -631,7 +674,7 @@ function addSizedScreen(v) {
   s.panel = v.panel; s.mount = v.mount;
   if (v.unit === 'm') { s.sizeMode = 'meters'; s.tw = v.w; s.th = v.h; s.fit = 'nearest'; } else { s.sizeMode = 'grid'; s.cols = v.cols; s.rows = v.rows; }
   s.color = nextColor(S.project);
-  s.name = uniqueName(S.project, kind === 'main' ? 'Main screen' : (KINDS[kind] || KINDS.free).label);
+  s.name = uniqueName(S.project, kind === 'main' ? tr('Main screen') : (KINDS[kind] || KINDS.free).label);
   const comp = computeScreen(projectWith(v.panel), s);
   const first = S.project.screens[0];
   change((p) => {
@@ -643,52 +686,59 @@ function addSizedScreen(v) {
   }, { structural: true });
   PF.sf = { panel: v.panel, unit: v.unit, w: v.w, h: v.h, cols: v.cols, rows: v.rows, mount: v.mount }; Prefs.save();
   S.view.fitted = false; renderStage();
-  toast(`Added ${s.name}`, { label: 'Undo', run: undo });
+  toast(tr('Added {name}', { name: s.name }), { label: tr('Undo'), run: undo });
 }
 function sizeModal() {
-  const m = openModal({ title: 'Add a screen', body: `<form class="sf-form" novalidate>${sizeFormHtml(true)}<button type="submit" hidden></button></form>`, foot: [
-    { label: 'Cancel', run: (close) => close() },
-    { label: 'Add screen', cls: 'primary', run: (close) => { const v = form.values(); if (v) { close(); addSizedScreen(v); } } },
+  const m = openModal({ title: tr('Add a screen'), body: `<form class="sf-form" novalidate>${sizeFormHtml(true)}<button type="submit" hidden></button></form>`, foot: [
+    { label: tr('Cancel'), run: (close) => close() },
+    { label: tr('Add screen'), cls: 'primary', run: (close) => { const v = form.values(); if (v) { close(); addSizedScreen(v); } } },
   ], onClose: () => form.off() });
   const form = bindSizeForm(m.body, { kinds: true });
   $('form', m.body).addEventListener('submit', (e) => { e.preventDefault(); const v = form.values(); if (v) { m.close(); addSizedScreen(v); } });
 }
 function mirrorName(n) {
   const sw = (m) => ({ left: 'right', right: 'left', Left: 'Right', Right: 'Left', LEFT: 'RIGHT', RIGHT: 'LEFT' }[m] || m);
-  return /left|right/i.test(n) ? n.replace(/left|right/gi, sw) : null;
+  if (/left|right/i.test(n)) return n.replace(/left|right/gi, sw);
+  // Slovenian names: levi/desni, leva/desna, levo/desno and their other endings, as whole words
+  const sl = () => /(^|[\s\-_(])(lev|desn)(i|a|o|e|em|ega|emu|ih|im|ima|imi)(?=$|[\s\-_.,)])/gi;
+  if (!sl().test(n)) return null;
+  return n.replace(sl(), (m, pre, stem, end) => {
+    const to = stem.toLowerCase() === 'lev' ? 'desn' : 'lev';
+    return pre + (stem === stem.toUpperCase() ? to.toUpperCase() : stem[0] === stem[0].toUpperCase() ? to[0].toUpperCase() + to.slice(1) : to) + end;
+  });
 }
 function duplicateScreen(id, mirrored = false) {
   const src = findScreen(id); if (!src) return;
   const s = deepClone(src); s.id = uid('s-');
   const comp = S.comps[src.id];
   if (mirrored) {
-    s.name = uniqueName(S.project, mirrorName(src.name) || `${src.name} mirrored`);
+    s.name = uniqueName(S.project, mirrorName(src.name) || tr('{name} mirrored', { name: src.name }));
     s.x = src.x === 0 ? Math.round((comp.W + 1000) / 50) * 50 : -src.x; s.yaw = -src.yaw;
     s.data = Object.assign({}, src.data, { start: src.data.start[0] + (src.data.start[1] === 'l' ? 'r' : 'l') });
     s.holes = src.holes.map((k) => { const [c, r] = k.split(',').map(Number); return `${comp.cols - 1 - c},${r}`; });
   } else {
-    s.name = uniqueName(S.project, `${src.name} copy`);
+    s.name = uniqueName(S.project, tr('{name} copy', { name: src.name }));
   }
   s.color = nextColor(S.project);
   change((p) => { p.screens.push(s); if (!mirrored) placeNewScreen(p, s, comp); S.activeId = s.id; S.selection = new Set([s.id]); }, { structural: true });
   S.view.fitted = false; renderStage();
-  toast(`Added ${s.name}`, { label: 'Undo', run: undo });
+  toast(tr('Added {name}', { name: s.name }), { label: tr('Undo'), run: undo });
 }
 function deleteScreens(ids) {
   const list = ids.map(findScreen).filter(Boolean);
   if (!list.length) return;
-  const names = list.length === 1 ? list[0].name : `${list.length} screens`;
+  const names = list.length === 1 ? list[0].name : trn(list.length, '{n} screen', '{n} screens');
   change((p) => {
     p.screens = p.screens.filter((s) => !ids.includes(s.id));
     if (!p.screens.some((s) => s.id === S.activeId)) S.activeId = p.screens[0] ? p.screens[0].id : null;
     S.selection = new Set(S.activeId ? [S.activeId] : []);
   }, { structural: true });
-  toast(`Deleted ${names}`, { label: 'Undo', run: undo });
+  toast(tr('Deleted {name}', { name: names }), { label: tr('Undo'), run: undo });
 }
 function alignScreens(kind) {
   const ids = S.selection.size >= 2 ? [...S.selection] : S.project.screens.map((s) => s.id);
   const list = ids.map(findScreen).filter(Boolean);
-  if (list.length < (kind === 'center' ? 1 : 2)) { toast('Add a second screen first.'); return; }
+  if (list.length < (kind === 'center' ? 1 : 2)) { toast(tr('Add a second screen first.')); return; }
   const W = (s) => S.comps[s.id].W, H = (s) => S.comps[s.id].H;
   const anchor = list.find((s) => s.id === S.activeId) || list[0];
   change(() => {
@@ -705,7 +755,7 @@ function alignScreens(kind) {
       const off = -(x0 + x1) / 2; list.forEach((s) => { s.x = Math.round(s.x + off); });
     }
   });
-  toast({ top: 'Aligned tops', bottom: 'Aligned bottoms', dist: 'Spaced evenly', center: 'Centred on the centre line' }[kind] + (S.selection.size >= 2 ? '' : ' (all screens)'), { label: 'Undo', run: undo });
+  toast({ top: tr('Aligned tops'), bottom: tr('Aligned bottoms'), dist: tr('Spaced evenly'), center: tr('Centred on the centre line') }[kind] + (S.selection.size >= 2 ? '' : tr(' (all screens)')), { label: tr('Undo'), run: undo });
 }
 function moveSelection(drag, dx, dy, free) {
   const prim = findScreen(drag.id); const o = drag.orig.get(drag.id); if (!prim || !o) return;
@@ -862,23 +912,27 @@ function toggleMenu(btn, menu) {
 function renderAddMenu() {
   $('#add-menu').innerHTML = KIND_ORDER.map((k) => {
     const d = KINDS[k], p = getPanel(S.project, d.panel);
-    return `<button data-kind="${k}"><b>${d.label}</b><span>${d.cols} × ${d.rows} of ${esc(shortName(p))} · ${fmtSize(d.cols * p.w, d.rows * p.h)}${d.shape ? ' · curved' : ''}</span></button>`;
-  }).join('') + '<button data-custom><b>Your own size…</b><span>Any panel, including yours, at the width and height you need</span></button>';
+    return `<button data-kind="${k}"><b>${d.label}</b><span>${tr('{cols} × {rows} of {panel}', { cols: d.cols, rows: d.rows, panel: esc(shortName(p)) })} · ${fmtSize(d.cols * p.w, d.rows * p.h)}${d.shape ? tr(' · curved') : ''}</span></button>`;
+  }).join('') + `<button data-custom><b>${tr('Your own size…')}</b><span>${tr('Any panel, including yours, at the width and height you need')}</span></button>`;
 }
 function renderExportMenu() {
   const ok = Downloads.available(); const s = active(); const c = s ? S.comps[s.id] : null;
   const items = [
-    ['pdf', 'PDF report', 'Layout, 3D view, elevations, data cabling and power for every screen'],
-    ['layout', 'Layout drawing (PNG)', 'The stage layout as an image'],
-    ['plan', 'Plan drawing (PNG)', s ? `${s.name}, current plan view` : 'Current screen'],
-    ['pixmap', 'Pixel map (PNG)', c ? `${s.name} at native ${c.resW} × ${c.resH} px, as test content` : 'Current screen at native resolution'],
-    ['packing', 'Packing list (spreadsheet)', 'Cabinets, controller and cables, as a CSV file'],
-    ['cabinets', 'Cabinet list (spreadsheet)', 'Every cabinet position with its data port and power circuit, as a CSV file'],
-    ['json', 'Project file (JSON)', 'Back up or share; open it again with Import'],
+    ['pdf', tr('PDF report'), tr('Layout, 3D view, elevations, data cabling and power for every screen')],
+    ['layout', tr('Layout drawing (PNG)'), tr('The stage layout as an image')],
+    ['plan', tr('Plan drawing (PNG)'), s ? tr('{name}, current plan view', { name: s.name }) : tr('Current screen')],
+    ['pixmap', tr('Pixel map (PNG)'), c ? tr('{name} at native {w} × {h} px, as test content', { name: s.name, w: c.resW, h: c.resH }) : tr('Current screen at native resolution')],
+    ['packing', tr('Packing list (spreadsheet)'), tr('Cabinets, controller and cables, as a CSV file')],
+    ['cabinets', tr('Cabinet list (spreadsheet)'), tr('Every cabinet position with its data port and power circuit, as a CSV file')],
+    ['json', tr('Project file (JSON)'), tr('Back up or share; open it again with Import')],
   ];
-  $('#export-menu').innerHTML = items.map(([k, t, d]) => `<button data-exp="${k}"${ok ? '' : ' disabled'}><b>${t}</b><span>${esc(d)}</span></button>`).join('') + (ok ? '' : '<div class="menu-note">Saving files is not available in this view.</div>');
+  $('#export-menu').innerHTML = items.map(([k, t, d]) => `<button data-exp="${k}"${ok ? '' : ' disabled'}><b>${t}</b><span>${esc(d)}</span></button>`).join('') + (ok ? '' : `<div class="menu-note">${tr('Saving files is not available in this view.')}</div>`);
 }
 
+// the start card on an empty stage: screen types to tap, and the size form (built once, labelled again after a change of language)
+function renderStart() {
+  $('#empty-kinds').innerHTML = KIND_ORDER.map((k) => { const d = KINDS[k], pn = getPanel(null, d.panel); return `<button class="chip" data-kind="${k}"><b>${d.label}</b><span>${d.cols} × ${d.rows} · ${fmtSize(d.cols * pn.w, d.rows * pn.h)}</span></button>`; }).join('');
+}
 function bindAll() {
   // top bar
   const pj = (id, field) => {
@@ -888,10 +942,10 @@ function bindAll() {
   pj('#pj-name', 'name'); pj('#pj-client', 'client'); pj('#pj-rev', 'revision');
   $('#btn-new').onclick = newProject; $('#btn-open').onclick = openProjectsModal; $('#btn-dup').onclick = duplicateProject;
   // empty stage: one tap adds a first screen, or opens the example project
-  $('#empty-kinds').innerHTML = KIND_ORDER.map((k) => { const d = KINDS[k], pn = getPanel(null, d.panel); return `<button class="chip" data-kind="${k}"><b>${d.label}</b><span>${d.cols} × ${d.rows} · ${fmtSize(d.cols * pn.w, d.rows * pn.h)}</span></button>`; }).join('');
   $('#empty-kinds').addEventListener('click', (e) => { const b = e.target.closest('[data-kind]'); if (b) addScreen(b.dataset.kind); });
   $('#start-fields').innerHTML = sizeFormHtml(false);
-  const startForm = bindSizeForm($('#start-fields'));
+  const startForm = S.startForm = bindSizeForm($('#start-fields'));
+  renderStart();
   $('#start-form').addEventListener('submit', (e) => { e.preventDefault(); const v = startForm.values(); if (v) addSizedScreen(v); });
   $('#btn-example').onclick = openExample;
   $('#file-panels').addEventListener('change', async (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) await importPanels(f); });
@@ -956,15 +1010,15 @@ function bindAll() {
     const corner = e.target.closest('[data-corner-v]');
     if (corner) { change(() => { s.data.start = corner.dataset.cornerV; }, { structural: true }); return; }
     const sg = e.target.closest('[data-sugg]');
-    if (sg) { const [cc, rr] = sg.dataset.sugg.split('x').map(Number); change(() => { s.cols = cc; s.rows = rr; s.holes = []; }, { structural: true }); toast(`Set to ${cc} × ${rr}`, { label: 'Undo', run: undo }); return; }
+    if (sg) { const [cc, rr] = sg.dataset.sugg.split('x').map(Number); change(() => { s.cols = cc; s.rows = rr; s.holes = []; }, { structural: true }); toast(tr('Set to {cols} × {rows}', { cols: cc, rows: rr }), { label: tr('Undo'), run: undo }); return; }
     const act = e.target.closest('[data-act]'); if (!act) return;
     const a = act.dataset.act;
     if (a === 'panels') panelsModal();
     if (a === 'panel-new') panelModal({ use: true });
     if (a === 'panel-copy') panelModal({ template: getPanel(S.project, s.panel), use: true });
     if (a === 'panel-edit') { const p = getPanel(S.project, s.panel); if (Lib.isOwn(p.id)) panelModal({ existing: Lib.find(p.id) }); else panelModal({ existing: p, projectOnly: true }); }
-    if (a === 'panel-keep') { const p = getPanel(S.project, s.panel); Lib.upsert(normalizePanel(p)); toast(`Added ${p.name} to your panels`); }
-    if (a === 'panel-update') { const lp = Lib.find(s.panel); if (lp) { change((pp) => { pp.catalog = pp.catalog.map((c) => (c.id === lp.id ? deepClone(lp) : c)); }, { structural: true }); toast(`Updated ${lp.name} in this project`, { label: 'Undo', run: undo }); } }
+    if (a === 'panel-keep') { const p = getPanel(S.project, s.panel); Lib.upsert(normalizePanel(p)); toast(tr('Added {name} to your panels', { name: p.name })); }
+    if (a === 'panel-update') { const lp = Lib.find(s.panel); if (lp) { change((pp) => { pp.catalog = pp.catalog.map((c) => (c.id === lp.id ? deepClone(lp) : c)); }, { structural: true }); toast(tr('Updated {name} in this project', { name: lp.name }), { label: tr('Undo'), run: undo }); } }
     if (a === 'holes-clear') change(() => { s.holes = []; }, { structural: false });
     if (a === 'gs-reset') change(() => { s.gs = Object.assign(defaultGroundStack(), s.gs || {}, { over: {} }); }, { structural: false });
     if (a === 'settings') settingsModal();
@@ -980,7 +1034,7 @@ function bindAll() {
     const cell = e.target.closest && e.target.closest('[data-key]'); if (!cell) return;
     const s = active(); const key = cell.getAttribute('data-key');
     const c = S.comps[s.id];
-    if (!s.holes.includes(key) && c.count <= 1) { toast('A screen needs at least one cabinet.'); return; }
+    if (!s.holes.includes(key) && c.count <= 1) { toast(tr('A screen needs at least one cabinet.')); return; }
     change(() => { s.holes = s.holes.includes(key) ? s.holes.filter((k) => k !== key) : [...s.holes, key]; }, { key: `holes:${s.id}` });
   });
   let pr = 0; new ResizeObserver(() => { cancelAnimationFrame(pr); pr = requestAnimationFrame(renderPlan); }).observe($('#plan-wrap').parentElement);
@@ -1014,7 +1068,7 @@ function bindAll() {
 /* ---------- modals ---------- */
 function openModal({ title, body, foot, wide, onClose }) {
   const back = document.createElement('div'); back.className = 'modal-back';
-  back.innerHTML = `<div class="modal${wide ? ' wide' : ''}" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="modal-head"><h3>${esc(title)}</h3><button class="btn icon sm ghost" data-close aria-label="Close"><svg class="ico" style="transform:rotate(45deg)"><use href="#i-plus"/></svg></button></div><div class="modal-body"></div>${foot ? '<div class="modal-foot"></div>' : ''}</div>`;
+  back.innerHTML = `<div class="modal${wide ? ' wide' : ''}" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="modal-head"><h3>${esc(title)}</h3><button class="btn icon sm ghost" data-close aria-label="${tr('Close')}"><svg class="ico" style="transform:rotate(45deg)"><use href="#i-plus"/></svg></button></div><div class="modal-body"></div>${foot ? '<div class="modal-foot"></div>' : ''}</div>`;
   const bodyEl = back.querySelector('.modal-body');
   if (typeof body === 'string') bodyEl.innerHTML = body; else if (body) bodyEl.appendChild(body);
   const prev = document.activeElement;
@@ -1032,37 +1086,37 @@ function openModal({ title, body, foot, wide, onClose }) {
 function relTime(iso) {
   const t = Date.parse(iso); if (!t) return '';
   const d = (Date.now() - t) / 1000;
-  if (d < 60) return 'just now'; if (d < 3600) return `${Math.round(d / 60)} min ago`; if (d < 86400) return `${Math.round(d / 3600)} h ago`;
-  if (d < 172800) return 'yesterday';
-  return new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (d < 60) return tr('just now'); if (d < 3600) return tr('{n} min ago', { n: Math.round(d / 60) }); if (d < 86400) return tr('{n} h ago', { n: Math.round(d / 3600) });
+  if (d < 172800) return tr('yesterday');
+  return fmtDate(t);
 }
 async function openProjectsModal() {
-  const m = openModal({ title: 'Open project', body: '<div class="empty">Loading saved projects…</div>' });
+  const m = openModal({ title: tr('Open project'), body: `<div class="empty">${tr('Loading saved projects…')}</div>` });
   await flushSave();
   const list = await Store.list();
   const mode = Store.mode();
-  const exampleLink = '<div style="margin-top:12px"><button class="linkbtn" data-example>Open the example project</button></div>';
+  const exampleLink = `<div style="margin-top:12px"><button class="linkbtn" data-example>${tr('Open the example project')}</button></div>`;
   m.body.addEventListener('click', (e) => { if (e.target.closest('[data-example]')) { m.close(); openExample(); } });
   if (!list.length) {
-    m.body.innerHTML = `<div class="empty">No saved projects yet. Projects save automatically once you change something${mode === 'none' ? ', but this browser is blocking storage, so use Export › Project file to keep your work' : ''}. You can also Import a project file.</div>${exampleLink}`;
+    m.body.innerHTML = `<div class="empty">${mode === 'none' ? tr('No saved projects yet. Projects save automatically once you change something, but this browser is blocking storage, so use Export › Project file to keep your work. You can also Import a project file.') : tr('No saved projects yet. Projects save automatically once you change something. You can also Import a project file.')}</div>${exampleLink}`;
     return;
   }
-  m.body.innerHTML = `<div class="desc">${mode === 'cloud' ? 'Projects saved to your account. They follow you to any device where you open this planner.' : 'Projects saved in this browser.'}</div>
+  m.body.innerHTML = `<div class="desc">${mode === 'cloud' ? tr('Projects saved to your account. They follow you to any device where you open this planner.') : tr('Projects saved in this browser.')}</div>
     <div class="plist">${list.map((x) => `<div class="prow${x.id === S.project.id ? ' current' : ''}" data-id="${esc(x.id)}">
-      <div><div class="t">${esc(x.name || 'Untitled')}</div><div class="m">${[x.client, x.revision ? 'Rev ' + x.revision : '', `${x.screens || 0} screen${x.screens === 1 ? '' : 's'}`, `${fmtInt(x.cabinets || 0)} cabinets`, relTime(x.updated), x.where === 'browser' && mode === 'cloud' ? 'this browser only' : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
-      <div class="b">${x.id === S.project.id ? '<span class="m">Open now</span>' : '<button class="btn sm" data-open>Open</button><button class="btn sm danger" data-del>Delete</button>'}</div></div>`).join('')}</div>${exampleLink}`;
+      <div><div class="t">${esc(x.name || tr('Untitled'))}</div><div class="m">${[x.client, x.revision ? tr('Rev {rev}', { rev: x.revision }) : '', trn(x.screens || 0, '{n} screen', '{n} screens'), trn(x.cabinets || 0, '{n} cabinet', '{n} cabinets'), relTime(x.updated), x.where === 'browser' && mode === 'cloud' ? tr('this browser only') : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
+      <div class="b">${x.id === S.project.id ? `<span class="m">${tr('Open now')}</span>` : `<button class="btn sm" data-open>${tr('Open')}</button><button class="btn sm danger" data-del>${tr('Delete')}</button>`}</div></div>`).join('')}</div>${exampleLink}`;
   m.body.addEventListener('click', async (e) => {
     const row = e.target.closest('.prow'); if (!row) return; const id = row.dataset.id;
     if (e.target.closest('[data-open]')) {
       const p = await Store.load(id);
-      if (!p) { toast('That project could not be opened.'); return; }
-      setProject(p); S.lastSetId = p.id; Store.setLast(p.id); renderAll(); m.close(); toast(`Opened ${p.name}`);
+      if (!p) { toast(tr('That project could not be opened.')); return; }
+      setProject(p); S.lastSetId = p.id; Store.setLast(p.id); renderAll(); m.close(); toast(tr('Opened {name}', { name: p.name }));
       return;
     }
     const del = e.target.closest('[data-del]');
     if (del) {
-      if (!del.classList.contains('armed')) { del.classList.add('armed'); del.textContent = 'Confirm delete'; setTimeout(() => { if (del.isConnected) { del.classList.remove('armed'); del.textContent = 'Delete'; } }, 4000); return; }
-      await Store.remove(id); row.remove(); toast('Project deleted');
+      if (!del.classList.contains('armed')) { del.classList.add('armed'); del.textContent = tr('Confirm delete'); setTimeout(() => { if (del.isConnected) { del.classList.remove('armed'); del.textContent = tr('Delete'); } }, 4000); return; }
+      await Store.remove(id); row.remove(); toast(tr('Project deleted'));
     }
   });
 }
@@ -1070,18 +1124,18 @@ async function newProject() {
   await flushSave();
   // saved once something is added or changed, so empty projects don't pile up in Open
   setProject(blankProject(), { fresh: true }); renderAll();
-  toast('Started a new project');
+  toast(tr('Started a new project'));
 }
 async function openExample() {
   await flushSave();
   setProject(exampleProject()); renderAll();
-  toast('Opened the example project. Your changes to it save as a project of your own.');
+  toast(tr('Opened the example project. Your changes to it save as a project of your own.'));
 }
 async function duplicateProject() {
   await flushSave();
-  const p = deepClone(S.project); p.id = uid('p-'); p.name = `${S.project.name} (copy)`; p.created = p.updated = new Date().toISOString(); delete p.example;
+  const p = deepClone(S.project); p.id = uid('p-'); p.name = tr('{name} (copy)', { name: S.project.name }); p.created = p.updated = new Date().toISOString(); delete p.example;
   setProject(p, { keepView: true }); S.pristine = false; renderAll(); saveNow();
-  toast(`Now editing ${p.name}`);
+  toast(tr('Now editing {name}', { name: p.name }));
 }
 async function importFile(e) {
   const f = e.target.files && e.target.files[0]; e.target.value = '';
@@ -1097,53 +1151,56 @@ async function importFile(e) {
     p.id = uid('p-'); p.updated = new Date().toISOString(); delete p.example;
     await flushSave();
     setProject(p); S.pristine = false; renderAll(); saveNow();
-    toast(`Imported ${p.name}`);
-  } catch (err) { toast(`That file could not be imported: ${err.message || 'it is not a project file'}`); }
+    toast(tr('Imported {name}', { name: p.name }));
+  } catch (err) { toast(tr('That file could not be imported: {why}', { why: err.message || tr('it is not a project file') })); }
 }
 
 function settingsModal() {
   const p = S.project, st = p.settings;
   const body = `
-    <div class="msec"><h4>Project</h4><div class="mgrid">
-      <label class="fld"><span>Project name</span><input type="text" data-sb="name" value="${esc(p.name)}"></label>
-      <label class="fld"><span>Client</span><input type="text" data-sb="client" value="${esc(p.client || '')}"></label>
-      <label class="fld"><span>Venue</span><input type="text" data-sb="settings.venue" value="${esc(st.venue || '')}"></label>
-      <label class="fld"><span>Address</span><input type="text" data-sb="settings.address" value="${esc(st.address || '')}" placeholder="Street, postcode, city"></label>
-      <label class="fld"><span>On-site contact</span><input type="text" data-sb="settings.contact" value="${esc(st.contact || '')}"></label>
-      <label class="fld"><span>Contact phone</span><input type="text" data-sb="settings.phone" value="${esc(st.phone || '')}"></label>
-      <label class="fld"><span>Setup</span><input type="text" data-sb="settings.setup" value="${esc(st.setup || '')}" placeholder="e.g. 13 Aug 2026, 08:00"></label>
-      <label class="fld"><span>Event date</span><input type="text" data-sb="settings.eventDate" value="${esc(st.eventDate || '')}" placeholder="e.g. 14–16 Aug 2026"></label>
-      <label class="fld"><span>Teardown</span><input type="text" data-sb="settings.teardown" value="${esc(st.teardown || '')}" placeholder="e.g. 16 Aug 2026, 23:00"></label>
-      <label class="fld"><span>Revision</span><input type="text" data-sb="revision" value="${esc(p.revision || '')}"></label>
-      <label class="fld"><span>Prepared by</span><input type="text" data-sb="settings.preparedBy" value="${esc(st.preparedBy || '')}"></label>
-    </div><label class="fld"><span>Notes for the report</span><textarea data-sb="settings.notes" rows="3">${esc(st.notes || '')}</textarea></label></div>
-    <div class="msec"><h4>Data</h4><div class="mgrid">
-      <label class="fld"><span>Pixels per data port</span><input type="number" id="set-portcap" data-sb="settings.portCapacity" data-t="int" min="1000" max="1000000000" step="1000" value="${st.portCapacity}"></label>
-      <label class="fld"><span>Port label</span><input type="text" data-sb="settings.portPrefix" maxlength="4" value="${esc(st.portPrefix || 'P')}"></label>
-    </div><div class="chips"><button class="chip" data-portcap="650000"><b>650,000</b><span>1 Gbit port, 8-bit</span></button><button class="chip" data-portcap="325000"><b>325,000</b><span>1 Gbit port, 10-bit</span></button></div>
-    <div class="desc">NovaStar rates one 1 Gbit Ethernet port at 650,000 px with 8-bit colour and 325,000 px with 10-bit. High frame rates also lower the number, so check your processor's figures.</div>
-      <label class="chk"><input type="checkbox" data-sb="settings.backup"${st.backup ? ' checked' : ''}> Backup cables: run a second cable from the last cabinet of each chain back to the controller</label>
-      <div class="desc">With backup, each chain is fed from both ends, so one broken cable does not black out the cabinets after it. It uses a second controller output per port.</div>
-      <label class="fld"><span>NovaStar controller</span><select data-sb="settings.controller" id="set-ctrl">
-        <option value="auto"${st.controller === 'auto' ? ' selected' : ''}>Suggest one (VX Pro series)</option>
-        ${CONTROLLERS.map((d) => `<option value="${d.id}"${st.controller === d.id ? ' selected' : ''}>${esc(d.name)} · ${d.ports} outputs · ${fmtNum(d.capacity / 1e6, 2)} M px</option>`).join('')}
+    <div class="msec"><h4>${tr('Language')}</h4>
+      <div class="seg" role="group" aria-label="${tr('Language')}">${Object.entries(LANGS).map(([k, name]) => `<button data-lang="${k}" lang="${k}" aria-pressed="${LANG === k}">${name}</button>`).join('')}</div>
+      <div class="desc">${tr('For this browser, in every project. Text, numbers, drawings and exports follow it.')}</div></div>
+    <div class="msec"><h4>${tr('Project')}</h4><div class="mgrid">
+      <label class="fld"><span>${tr('Project name')}</span><input type="text" data-sb="name" value="${esc(p.name)}"></label>
+      <label class="fld"><span>${tr('Client')}</span><input type="text" data-sb="client" value="${esc(p.client || '')}"></label>
+      <label class="fld"><span>${tr('Venue')}</span><input type="text" data-sb="settings.venue" value="${esc(st.venue || '')}"></label>
+      <label class="fld"><span>${tr('Address')}</span><input type="text" data-sb="settings.address" value="${esc(st.address || '')}" placeholder="${tr('Street, postcode, city')}"></label>
+      <label class="fld"><span>${tr('On-site contact')}</span><input type="text" data-sb="settings.contact" value="${esc(st.contact || '')}"></label>
+      <label class="fld"><span>${tr('Contact phone')}</span><input type="text" data-sb="settings.phone" value="${esc(st.phone || '')}"></label>
+      <label class="fld"><span>${tr('Setup')}</span><input type="text" data-sb="settings.setup" value="${esc(st.setup || '')}" placeholder="${tr('e.g. 13 Aug 2026, 08:00')}"></label>
+      <label class="fld"><span>${tr('Event date')}</span><input type="text" data-sb="settings.eventDate" value="${esc(st.eventDate || '')}" placeholder="${tr('e.g. 14–16 Aug 2026')}"></label>
+      <label class="fld"><span>${tr('Teardown')}</span><input type="text" data-sb="settings.teardown" value="${esc(st.teardown || '')}" placeholder="${tr('e.g. 16 Aug 2026, 23:00')}"></label>
+      <label class="fld"><span>${tr('Revision')}</span><input type="text" data-sb="revision" value="${esc(p.revision || '')}"></label>
+      <label class="fld"><span>${tr('Prepared by')}</span><input type="text" data-sb="settings.preparedBy" value="${esc(st.preparedBy || '')}"></label>
+    </div><label class="fld"><span>${tr('Notes for the report')}</span><textarea data-sb="settings.notes" rows="3">${esc(st.notes || '')}</textarea></label></div>
+    <div class="msec"><h4>${tr('Data')}</h4><div class="mgrid">
+      <label class="fld"><span>${tr('Pixels per data port')}</span><input type="number" id="set-portcap" data-sb="settings.portCapacity" data-t="int" min="1000" max="1000000000" step="1000" value="${st.portCapacity}"></label>
+      <label class="fld"><span>${tr('Port label')}</span><input type="text" data-sb="settings.portPrefix" maxlength="4" value="${esc(st.portPrefix || 'P')}"></label>
+    </div><div class="chips"><button class="chip" data-portcap="650000"><b>${fmtInt(650000)}</b><span>${tr('1 Gbit port, 8-bit')}</span></button><button class="chip" data-portcap="325000"><b>${fmtInt(325000)}</b><span>${tr('1 Gbit port, 10-bit')}</span></button></div>
+    <div class="desc">${tr("NovaStar rates one 1 Gbit Ethernet port at 650,000 px with 8-bit colour and 325,000 px with 10-bit. High frame rates also lower the number, so check your processor's figures.")}</div>
+      <label class="chk"><input type="checkbox" data-sb="settings.backup"${st.backup ? ' checked' : ''}> ${tr('Backup cables: run a second cable from the last cabinet of each chain back to the controller')}</label>
+      <div class="desc">${tr('With backup, each chain is fed from both ends, so one broken cable does not black out the cabinets after it. It uses a second controller output per port.')}</div>
+      <label class="fld"><span>${tr('NovaStar controller')}</span><select data-sb="settings.controller" id="set-ctrl">
+        <option value="auto"${st.controller === 'auto' ? ' selected' : ''}>${tr('Suggest one (VX Pro series)')}</option>
+        ${CONTROLLERS.map((d) => `<option value="${d.id}"${st.controller === d.id ? ' selected' : ''}>${tr('{name} · {ports} outputs · {px} M px', { name: esc(d.name), ports: d.ports, px: fmtNum(d.capacity / 1e6, 2) })}</option>`).join('')}
       </select></label>
       <div class="readout" id="ctrl-out"></div></div>
-    <div class="msec pro"><h4>Power</h4><div class="mgrid">
-      <label class="fld"><span>Mains voltage (V)</span><input type="number" data-sb="settings.voltage" data-t="num" min="50" max="1000" step="1" value="${st.voltage}"></label>
-      <label class="fld"><span>Circuit breaker (A)</span><input type="number" data-sb="settings.circuitAmps" data-t="num" min="1" max="1000" step="1" value="${st.circuitAmps}"></label>
-      <label class="fld"><span>Max load per circuit (%)</span><input type="number" data-sb="settings.loadFactor" data-t="pct" min="10" max="100" step="5" value="${Math.round(st.loadFactor * 100)}"></label>
-      <label class="fld"><span>Power factor</span><input type="number" data-sb="settings.powerFactor" data-t="num" min="0.5" max="1" step="0.01" value="${st.powerFactor}"></label>
-      <label class="fld"><span>Size circuits on</span><select data-sb="settings.powerBasis"><option value="max"${st.powerBasis !== 'avg' ? ' selected' : ''}>Maximum power</option><option value="avg"${st.powerBasis === 'avg' ? ' selected' : ''}>Typical power</option></select></label>
-    </div><div class="desc">Current = watts ÷ (volts × power factor). LED display power supplies with active PFC are usually above 0.95; use 1 to work from watts alone.</div></div>
-    <div class="msec"><h4>Layout and report</h4><div class="mgrid">
-      <label class="fld"><span>Snap step (mm)</span><input type="number" data-sb="settings.snap" data-t="int" min="1" max="5000" step="10" value="${st.snap}"></label>
+    <div class="msec pro"><h4>${tr('Power')}</h4><div class="mgrid">
+      <label class="fld"><span>${tr('Mains voltage (V)')}</span><input type="number" data-sb="settings.voltage" data-t="num" min="50" max="1000" step="1" value="${st.voltage}"></label>
+      <label class="fld"><span>${tr('Circuit breaker (A)')}</span><input type="number" data-sb="settings.circuitAmps" data-t="num" min="1" max="1000" step="1" value="${st.circuitAmps}"></label>
+      <label class="fld"><span>${tr('Max load per circuit (%)')}</span><input type="number" data-sb="settings.loadFactor" data-t="pct" min="10" max="100" step="5" value="${Math.round(st.loadFactor * 100)}"></label>
+      <label class="fld"><span>${tr('Power factor')}</span><input type="number" data-sb="settings.powerFactor" data-t="num" min="0.5" max="1" step="0.01" value="${st.powerFactor}"></label>
+      <label class="fld"><span>${tr('Size circuits on')}</span><select data-sb="settings.powerBasis"><option value="max"${st.powerBasis !== 'avg' ? ' selected' : ''}>${tr('Maximum power')}</option><option value="avg"${st.powerBasis === 'avg' ? ' selected' : ''}>${tr('Typical power')}</option></select></label>
+    </div><div class="desc">${tr('Current = watts ÷ (volts × power factor). LED display power supplies with active PFC are usually above 0.95; use 1 to work from watts alone.')}</div></div>
+    <div class="msec"><h4>${tr('Layout and report')}</h4><div class="mgrid">
+      <label class="fld"><span>${tr('Snap step (mm)')}</span><input type="number" data-sb="settings.snap" data-t="int" min="1" max="5000" step="10" value="${st.snap}"></label>
     </div>
-      <label class="chk"><input type="checkbox" data-sb="settings.report3D"${st.report3D ? ' checked' : ''}> Include the 3D view in the PDF</label>
-      <label class="chk pro"><input type="checkbox" data-sb="settings.reportPower"${st.reportPower ? ' checked' : ''}> Include a specifications and power page per screen</label>
-      <label class="chk"><input type="checkbox" data-sb="settings.reportPacking"${st.reportPacking ? ' checked' : ''}> Include a packing list</label>
+      <label class="chk"><input type="checkbox" data-sb="settings.report3D"${st.report3D ? ' checked' : ''}> ${tr('Include the 3D view in the PDF')}</label>
+      <label class="chk pro"><input type="checkbox" data-sb="settings.reportPower"${st.reportPower ? ' checked' : ''}> ${tr('Include a specifications and power page per screen')}</label>
+      <label class="chk"><input type="checkbox" data-sb="settings.reportPacking"${st.reportPacking ? ' checked' : ''}> ${tr('Include a packing list')}</label>
     </div>`;
-  const m = openModal({ title: 'Project settings', body, foot: [{ label: 'Done', cls: 'primary', run: (close) => close() }] });
+  const m = openModal({ title: tr('Settings'), body, foot: [{ label: tr('Done'), cls: 'primary', run: (close) => close() }] });
   const apply = (el, final) => {
     const path = el.dataset.sb; let v;
     if (el.type === 'checkbox') v = el.checked;
@@ -1162,9 +1219,14 @@ function settingsModal() {
     if (final) renderCfg();
     ctrlOut();
   };
-  const ctrlOut = () => { const el = $('#ctrl-out', m.body); if (el) el.innerHTML = S.plan ? ctrlSummary(S.plan) : 'No data ports yet.'; };
+  const ctrlOut = () => { const el = $('#ctrl-out', m.body); if (el) el.innerHTML = S.plan ? ctrlSummary(S.plan) : tr('No data ports yet.'); };
   ctrlOut();
-  m.body.addEventListener('click', (e) => { const b = e.target.closest('[data-portcap]'); if (!b) return; const el = $('#set-portcap', m.body); el.value = b.dataset.portcap; apply(el, true); });
+  m.body.addEventListener('click', (e) => {
+    // a new language: the whole page follows, and the dialog opens again in it
+    const lb = e.target.closest('[data-lang]');
+    if (lb) { if (lb.dataset.lang !== LANG) { setLanguage(lb.dataset.lang); m.close(); settingsModal(); } return; }
+    const b = e.target.closest('[data-portcap]'); if (!b) return; const el = $('#set-portcap', m.body); el.value = b.dataset.portcap; apply(el, true);
+  });
   m.body.addEventListener('input', (e) => { if (e.target.dataset.sb && e.target.type !== 'checkbox' && e.target.tagName !== 'SELECT') apply(e.target, false); });
   m.body.addEventListener('change', (e) => { if (e.target.dataset.sb) apply(e.target, true); });
 }
@@ -1173,51 +1235,51 @@ function settingsModal() {
 function panelModal({ existing = null, template = null, use = false, onSaved = null, projectOnly = false } = {}) {
   const base = existing || template;
   const p = base ? Object.assign({}, base) : { brand: '', model: '', w: 500, h: 500, px: 128, py: 128, kg: 8.5, wMax: 180, wAvg: 60, stock: null };
-  if (!existing && template) { p.brand = template.builtin ? '' : template.brand; p.model = template.builtin ? template.name.replace(/^Generic /, '') : template.model; p.stock = null; }
+  if (!existing && template) { p.brand = template.builtin ? '' : template.brand; p.model = template.builtin ? panelShort(template) : template.model; p.stock = null; }
   const usedBy = existing && projectOnly ? S.project.screens.filter((s) => s.panel === existing.id || (s.sizeMode === 'mix' && (s.mix.small === existing.id || s.mix.big === existing.id))).length : 0;
   const f = (k, label, step, unit, t = 'num') => `<label class="fld"><span>${label}</span><div class="unit-in"><input type="number" data-pk="${k}" data-t="${t}" step="${step}" min="0" inputmode="decimal" value="${p[k] === null || p[k] === undefined ? '' : p[k]}"><i>${unit}</i></div></label>`;
   const body = `
     <div class="mgrid two">
-      <label class="fld"><span>Brand</span><input type="text" data-pk="brand" value="${esc(p.brand || '')}" maxlength="40" list="pk-brands" placeholder="Manufacturer" autocomplete="off"></label>
-      <label class="fld"><span>Model</span><input type="text" data-pk="model" value="${esc(p.model || p.name || '')}" maxlength="80" autocomplete="off"></label>
+      <label class="fld"><span>${tr('Brand')}</span><input type="text" data-pk="brand" value="${esc(p.brand || '')}" maxlength="40" list="pk-brands" placeholder="${tr('Manufacturer')}" autocomplete="off"></label>
+      <label class="fld"><span>${tr('Model')}</span><input type="text" data-pk="model" value="${esc(p.model || p.name || '')}" maxlength="80" autocomplete="off"></label>
     </div><datalist id="pk-brands">${Lib.brands().map((b) => `<option value="${esc(b)}"></option>`).join('')}</datalist>
-    <div class="msec"><h4>Cabinet</h4><div class="mgrid">${f('w', 'Width', 0.5, 'mm')}${f('h', 'Height', 0.5, 'mm')}${f('px', 'Pixels across', 1, 'px', 'int')}${f('py', 'Pixels down', 1, 'px', 'int')}</div></div>
-    <div class="msec"><h4>Weight and power (from the datasheet)</h4><div class="mgrid">${f('kg', 'Weight', 0.1, 'kg')}${f('wMax', 'Max power', 1, 'W')}${f('wAvg', 'Typical power', 1, 'W')}</div>
-    <div class="desc">Leave a value empty if you do not know it; totals that need it will show as no data.</div></div>
-    ${projectOnly ? '' : `<div class="msec"><h4>Stock</h4><div class="mgrid">${f('stock', 'Cabinets you have', 1, 'pcs', 'int')}</div><div class="desc">Optional. The planner warns when a project needs more than this.</div></div>`}
+    <div class="msec"><h4>${tr('Cabinet')}</h4><div class="mgrid">${f('w', tr('Width'), 0.5, 'mm')}${f('h', tr('Height'), 0.5, 'mm')}${f('px', tr('Pixels across'), 1, 'px', 'int')}${f('py', tr('Pixels down'), 1, 'px', 'int')}</div></div>
+    <div class="msec"><h4>${tr('Weight and power (from the datasheet)')}</h4><div class="mgrid">${f('kg', tr('Weight'), 0.1, 'kg')}${f('wMax', tr('Max power'), 1, 'W')}${f('wAvg', tr('Typical power'), 1, 'W')}</div>
+    <div class="desc">${tr('Leave a value empty if you do not know it; totals that need it will show as no data.')}</div></div>
+    ${projectOnly ? '' : `<div class="msec"><h4>${tr('Stock')}</h4><div class="mgrid">${f('stock', tr('Cabinets you have'), 1, tr('pcs'), 'int')}</div><div class="desc">${tr('Optional. The planner warns when a project needs more than this.')}</div></div>`}
     <div class="readout" id="pk-out"></div>
-    ${existing && !projectOnly ? '<div class="desc">Changes apply to your panels and to this project. Other saved projects keep the values they were planned with until you choose Use the new values there.</div>' : ''}`;
+    ${existing && !projectOnly ? `<div class="desc">${tr('Changes apply to your panels and to this project. Other saved projects keep the values they were planned with until you choose Use the new values there.')}</div>` : ''}`;
   const s0 = active();
-  const m = openModal({ title: existing ? 'Edit panel' : 'New panel', body, foot: [
-    existing && !projectOnly ? { label: 'Remove from your panels', cls: 'danger', run: (close, btn) => {
-      if (!btn.classList.contains('armed')) { btn.classList.add('armed'); btn.textContent = 'Confirm remove'; return; }
+  const m = openModal({ title: existing ? tr('Edit panel') : tr('New panel'), body, foot: [
+    existing && !projectOnly ? { label: tr('Remove from your panels'), cls: 'danger', run: (close, btn) => {
+      if (!btn.classList.contains('armed')) { btn.classList.add('armed'); btn.textContent = tr('Confirm remove'); return; }
       const was = Lib.find(existing.id); Lib.remove(existing.id); close();
-      toast(`Removed ${existing.name} from your panels`, { label: 'Undo', run: () => { if (was) Lib.upsert(was); } });
+      toast(tr('Removed {name} from your panels', { name: existing.name }), { label: tr('Undo'), run: () => { if (was) Lib.upsert(was); } });
       if (onSaved) onSaved(null);
     } } : null,
-    existing && projectOnly ? { label: usedBy ? `Used by ${usedBy} screen${usedBy === 1 ? '' : 's'}` : 'Delete panel', cls: 'danger', disabled: !!usedBy, run: (close, btn) => {
-      if (!btn.classList.contains('armed')) { btn.classList.add('armed'); btn.textContent = 'Confirm delete'; return; }
-      change((pp) => { pp.catalog = pp.catalog.filter((c) => c.id !== existing.id); }, { structural: true }); close(); toast('Panel deleted', { label: 'Undo', run: undo });
+    existing && projectOnly ? { label: usedBy ? trn(usedBy, 'Used by {n} screen', 'Used by {n} screens') : tr('Delete panel'), cls: 'danger', disabled: !!usedBy, run: (close, btn) => {
+      if (!btn.classList.contains('armed')) { btn.classList.add('armed'); btn.textContent = tr('Confirm delete'); return; }
+      change((pp) => { pp.catalog = pp.catalog.filter((c) => c.id !== existing.id); }, { structural: true }); close(); toast(tr('Panel deleted'), { label: tr('Undo'), run: undo });
     } } : null,
-    { label: 'Cancel', run: (close) => close() },
-    { label: existing ? 'Save panel' : use && s0 && s0.sizeMode !== 'mix' ? 'Add and use' : 'Add panel', cls: 'primary', run: (close) => {
+    { label: tr('Cancel'), run: (close) => close() },
+    { label: existing ? tr('Save panel') : use && s0 && s0.sizeMode !== 'mix' ? tr('Add and use') : tr('Add panel'), cls: 'primary', run: (close) => {
       const v = read();
-      if (!v.model.trim()) { toast('Give the panel a model name.'); return; }
-      if (!(v.w > 0 && v.h > 0 && v.px > 0 && v.py > 0)) { toast('Width, height and pixel counts must be above zero.'); return; }
+      if (!v.model.trim()) { toast(tr('Give the panel a model name.')); return; }
+      if (!(v.w > 0 && v.h > 0 && v.px > 0 && v.py > 0)) { toast(tr('Width, height and pixel counts must be above zero.')); return; }
       if (existing) {
         const np = normalizePanel(Object.assign({}, v, { id: existing.id }));
         if (!projectOnly) Lib.upsert(np);
         const inProject = S.project.catalog.some((c) => c.id === np.id);
         if (inProject) change((pp) => { pp.catalog = pp.catalog.map((c) => (c.id === np.id ? deepClone(np) : c)); }, { structural: true });
-        close(); toast(`Saved ${np.name}`); if (onSaved) onSaved(np); return;
+        close(); toast(tr('Saved {name}', { name: np.name })); if (onSaved) onSaved(np); return;
       }
       const id = panelIdFor(v.brand, v.model);
-      if (Lib.isOwn(id)) { toast(`You already have ${panelName(v.brand, v.model)}. Edit that one, or use another model name.`); return; }
+      if (Lib.isOwn(id)) { toast(tr('You already have {name}. Edit that one, or use another model name.', { name: panelName(v.brand, v.model) })); return; }
       const np = normalizePanel(Object.assign({}, v, { id }));
       Lib.upsert(np);
       const s = active();
       if (use && s && s.sizeMode !== 'mix') change(() => { s.panel = np.id; }, { structural: true });
-      close(); toast(`Added ${np.name} to your panels`); if (onSaved) onSaved(np);
+      close(); toast(tr('Added {name} to your panels', { name: np.name })); if (onSaved) onSaved(np);
     } },
   ] });
   const read = () => {
@@ -1234,49 +1296,49 @@ function panelModal({ existing = null, template = null, use = false, onSaved = n
   const out = () => {
     const v = read(); const el = $('#pk-out', m.body);
     const name = panelName(v.brand, v.model);
-    if (v.w > 0 && v.px > 0 && v.h > 0 && v.py > 0) el.innerHTML = `${name ? `<b>${esc(name)}</b> · ` : ''}pitch <b>${(v.w / v.px).toFixed(3)} mm</b> across, <b>${(v.h / v.py).toFixed(3)} mm</b> down · ${fmtInt(v.px * v.py)} px per cabinet · ${fmtNum((v.px * v.py) / (v.w * v.h / 1e6) / 1000, 1)}k px/m²`;
-    else el.textContent = 'Enter the cabinet size and pixel counts.';
+    if (v.w > 0 && v.px > 0 && v.h > 0 && v.py > 0) el.innerHTML = `${name ? `<b>${esc(name)}</b> · ` : ''}${tr('pitch <b>{x} mm</b> across, <b>{y} mm</b> down · {px} px per cabinet · {k}k px/m²', { x: fmtDec(v.w / v.px, 3), y: fmtDec(v.h / v.py, 3), px: fmtInt(v.px * v.py), k: fmtNum((v.px * v.py) / (v.w * v.h / 1e6) / 1000, 1) })}`;
+    else el.textContent = tr('Enter the cabinet size and pixel counts.');
   };
   m.body.addEventListener('input', out); out();
 }
 
 /* ---------- the "Your panels" dialog: your list, the site's panels.xlsx, import and export ---------- */
 function specLine(p) {
-  return `${fmtNum(p.w, 1)} × ${fmtNum(p.h, 1)} mm · ${p.px} × ${p.py} px · P${fmtPitch(p)}${p.kg !== null ? ` · ${fmtNum(p.kg, 1)} kg` : ''}${p.wMax !== null ? ` · ${fmtInt(p.wMax)} W` : ''}${p.stock !== null && p.stock !== undefined ? ` · stock ${fmtInt(p.stock)}` : ''}`;
+  return `${fmtNum(p.w, 1)} × ${fmtNum(p.h, 1)} mm · ${p.px} × ${p.py} px · P${fmtPitch(p)}${p.kg !== null ? ` · ${fmtNum(p.kg, 1)} kg` : ''}${p.wMax !== null ? ` · ${fmtInt(p.wMax)} W` : ''}${p.stock !== null && p.stock !== undefined ? tr(' · stock {n}', { n: fmtInt(p.stock) }) : ''}`;
 }
 function skippedHtml(list) {
   if (!list || !list.length) return '';
-  return `<details class="more"><summary>${list.length} row${list.length === 1 ? '' : 's'} skipped</summary><div class="desc">${list.slice(0, 60).map((x) => `Row ${x.row}${x.name ? ` (${esc(x.name)})` : ''}: ${esc(x.reason)}`).join('<br>')}${list.length > 60 ? `<br>and ${list.length - 60} more` : ''}</div></details>`;
+  return `<details class="more"><summary>${trn(list.length, '{n} row skipped', '{n} rows skipped')}</summary><div class="desc">${list.slice(0, 60).map((x) => `${tr('Row {row}', { row: x.row })}${x.name ? ` (${esc(x.name)})` : ''}: ${esc(x.reason)}`).join('<br>')}${list.length > 60 ? `<br>${tr('and {n} more', { n: list.length - 60 })}` : ''}</div></details>`;
 }
 function panelListHtml(list, editable) {
   if (!list.length) return '';
   const groups = new Map();
   for (const p of [...list].sort(byBrandModel)) { const b = p.brand || ''; if (!groups.has(b)) groups.set(b, []); groups.get(b).push(p); }
-  return `<div class="plist">${[...groups].map(([b, ps]) => `<div class="lib-brand">${esc(b || 'No brand')}</div>${ps.map((p) => `<div class="prow" data-pid="${esc(p.id)}"><div><div class="t">${esc(b ? p.model : p.name)}</div><div class="m mono">${specLine(p)}</div></div>${editable ? '<div class="b"><button class="btn sm" data-lib="edit">Edit</button><button class="btn sm danger" data-lib="del">Delete</button></div>' : ''}</div>`).join('')}`).join('')}</div>`;
+  return `<div class="plist">${[...groups].map(([b, ps]) => `<div class="lib-brand">${esc(b || tr('No brand'))}</div>${ps.map((p) => `<div class="prow" data-pid="${esc(p.id)}"><div><div class="t">${esc(b ? p.model : p.name)}</div><div class="m mono">${specLine(p)}</div></div>${editable ? `<div class="b"><button class="btn sm" data-lib="edit">${tr('Edit')}</button><button class="btn sm danger" data-lib="del">${tr('Delete')}</button></div>` : ''}</div>`).join('')}`).join('')}</div>`;
 }
 function panelsModal() {
-  const m = openModal({ title: 'Your panels', body: '<div class="lib" id="lib"></div>', foot: [
-    { label: 'Export', run: exportPanels },
-    { label: 'Import Excel or CSV', run: () => $('#file-panels').click() },
-    { label: 'New panel', cls: 'primary', run: () => panelModal() },
+  const m = openModal({ title: tr('Your panels'), body: '<div class="lib" id="lib"></div>', foot: [
+    { label: tr('Export'), run: exportPanels },
+    { label: tr('Import Excel or CSV'), run: () => $('#file-panels').click() },
+    { label: tr('New panel'), cls: 'primary', run: () => panelModal() },
   ], onClose: () => { off(); S.libNote = ''; } });
   const render = () => {
     const box = $('#lib', m.body); if (!box) return;
     const mode = Store.mode();
-    const where = mode === 'cloud' ? 'in your account, so they follow you to every device where you open this planner' : mode === 'local' ? 'in this browser' : 'only until you close the page, because this browser is blocking storage, so use Export to keep them';
-    const out = [`<div class="desc">Your panels show in every panel list, grouped by brand, in every project. Panels you add here are kept ${where}. A project keeps a copy of each panel it uses, so its project file works anywhere.</div>`];
+    const where = mode === 'cloud' ? tr('in your account, so they follow you to every device where you open this planner') : mode === 'local' ? tr('in this browser') : tr('only until you close the page, because this browser is blocking storage, so use Export to keep them');
+    const out = [`<div class="desc">${tr('Your panels show in every panel list, grouped by brand, in every project. Panels you add here are kept {where}. A project keeps a copy of each panel it uses, so its project file works anywhere.', { where })}</div>`];
     if (S.libNote) out.push(`<div class="readout">${S.libNote}</div>`);
     const site = Lib.site;
     if (site) {
-      out.push(`<div class="lib-sec"><div class="lib-head"><h4>${esc(site.file)} on this site</h4><button class="btn sm" data-lib="reload">Read again</button></div>
-        <div class="desc">${site.error ? `<span class="warn">Could not read the file: ${esc(site.error)}</span><br>` : ''}${fmtInt(site.panels.length)} panel${site.panels.length === 1 ? '' : 's'}${site.sheet ? ` from the sheet “${esc(site.sheet)}”` : ''}, read ${relTime(site.loaded) || 'earlier'}. To change them, edit the file and upload it again.</div>
+      out.push(`<div class="lib-sec"><div class="lib-head"><h4>${tr('{file} on this site', { file: esc(site.file) })}</h4><button class="btn sm" data-lib="reload">${tr('Read again')}</button></div>
+        <div class="desc">${site.error ? `<span class="warn">${tr('Could not read the file: {why}', { why: esc(site.error) })}</span><br>` : ''}${trn(site.panels.length, '{n} panel', '{n} panels')}${site.sheet ? tr(' from the sheet “{sheet}”', { sheet: esc(site.sheet) }) : ''}${tr(', read {when}. To change them, edit the file and upload it again.', { when: relTime(site.loaded) || tr('earlier') })}</div>
         ${skippedHtml(site.skipped)}${panelListHtml(site.panels.filter((x) => !Lib.isOwn(x.id)), false)}</div>`);
     } else if (/(^|\.)github\.io$/i.test(location.hostname)) {
-      out.push(`<div class="lib-sec"><h4>Panel list for everyone</h4><div class="desc">Upload an Excel file named <b>panels.xlsx</b> to this planner's GitHub repository, next to index.html. The planner reads it every time it opens, on every device. <button class="linkbtn" data-lib="reload">Check again</button></div></div>`);
+      out.push(`<div class="lib-sec"><h4>${tr('Panel list for everyone')}</h4><div class="desc">${tr("Upload an Excel file named <b>panels.xlsx</b> to this planner's GitHub repository, next to index.html. The planner reads it every time it opens, on every device.")} <button class="linkbtn" data-lib="reload">${tr('Check again')}</button></div></div>`);
     }
-    out.push(`<div class="lib-sec"><h4>Added ${mode === 'cloud' ? 'to your account' : mode === 'local' ? 'in this browser' : 'here'}</h4>${Lib.own.length ? panelListHtml(Lib.own, true) : '<div class="empty">None yet. Use New panel, or Import an Excel or CSV file with one row per panel.</div>'}</div>`);
+    out.push(`<div class="lib-sec"><h4>${mode === 'cloud' ? tr('Added to your account') : mode === 'local' ? tr('Added in this browser') : tr('Added here')}</h4>${Lib.own.length ? panelListHtml(Lib.own, true) : `<div class="empty">${tr('None yet. Use New panel, or Import an Excel or CSV file with one row per panel.')}</div>`}</div>`);
     const tpl = /(^|\.)github\.io$/i.test(location.hostname) ? 'panels-template.xlsx' : 'https://juicypeachxx.github.io/Led-wall-calc/panels-template.xlsx';
-    out.push(`<div class="desc">Spreadsheet columns: Brand, Model, Width (mm), Height (mm), Pixels across, Pixels down, and if you have them Weight (kg), Max power (W), Typical power (W) and Stock. Pixel pitch can stand in for the pixel counts. <a class="linkbtn" href="${tpl}" download target="_blank" rel="noopener">Download the Excel template</a>; Export gives a CSV file with the same columns.</div>`);
+    out.push(`<div class="desc">${tr('Spreadsheet columns: Brand, Model, Width (mm), Height (mm), Pixels across, Pixels down, and if you have them Weight (kg), Max power (W), Typical power (W) and Stock. Pixel pitch can stand in for the pixel counts.')} <a class="linkbtn" href="${tpl}" download target="_blank" rel="noopener">${tr('Download the Excel template')}</a>${tr('; Export gives a CSV file with the same columns.')}</div>`);
     box.innerHTML = out.join('');
   };
   const off = Lib.on(render);
@@ -1285,14 +1347,14 @@ function panelsModal() {
     const a = b.dataset.lib, row = b.closest('[data-pid]'), p = row ? Lib.find(row.dataset.pid) : null;
     if (a === 'edit' && p) panelModal({ existing: p });
     if (a === 'del' && p) {
-      if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = 'Confirm delete'; setTimeout(() => { if (b.isConnected) { b.classList.remove('armed'); b.textContent = 'Delete'; } }, 4000); return; }
-      Lib.remove(p.id); toast(`Removed ${p.name} from your panels`, { label: 'Undo', run: () => Lib.upsert(p) });
+      if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = tr('Confirm delete'); setTimeout(() => { if (b.isConnected) { b.classList.remove('armed'); b.textContent = tr('Delete'); } }, 4000); return; }
+      Lib.remove(p.id); toast(tr('Removed {name} from your panels', { name: p.name }), { label: tr('Undo'), run: () => Lib.upsert(p) });
     }
     if (a === 'reload') { b.disabled = true; await loadSitePanels({ announce: true }); render(); }
     if (a === 'prune') {
       const gone = Lib.own.filter((x) => S.libPrune.includes(x.id)); S.libPrune = [];
       Lib.own = Lib.own.filter((x) => !gone.some((g) => g.id === x.id)); S.libNote = ''; Lib.saveOwn();
-      toast(`Removed ${gone.length} panel${gone.length === 1 ? '' : 's'}`, { label: 'Undo', run: () => { Lib.own.push(...gone); Lib.saveOwn(); } });
+      toast(trn(gone.length, 'Removed {n} panel', 'Removed {n} panels'), { label: tr('Undo'), run: () => { Lib.own.push(...gone); Lib.saveOwn(); } });
     }
   });
   render();
@@ -1301,10 +1363,10 @@ function panelsModal() {
 async function importPanels(file) {
   let r;
   try { r = await Sheets.readPanels(file, file.name); }
-  catch (e) { S.libNote = `<span class="warn"><b>${esc(file.name)}</b>: ${esc(e.message || 'could not be read')}</span>`; Lib.emit(); toast(`${file.name} could not be read`); return; }
+  catch (e) { S.libNote = `<span class="warn"><b>${esc(file.name)}</b>: ${esc(e.message || tr('could not be read'))}</span>`; Lib.emit(); toast(tr('{file} could not be read', { file: file.name })); return; }
   if (!r.header) {
-    S.libNote = `<span class="warn"><b>${esc(file.name)}</b>: no column names found.</span> The first rows need names such as Brand, Model, Width (mm), Height (mm), Pixels across and Pixels down.`;
-    Lib.emit(); toast(`No panel list found in ${file.name}`); return;
+    S.libNote = `<span class="warn"><b>${esc(file.name)}</b>: ${tr('no column names found.')}</span> ${tr('The first rows need names such as Brand, Model, Width (mm), Height (mm), Pixels across and Pixels down.')}`;
+    Lib.emit(); toast(tr('No panel list found in {file}', { file: file.name })); return;
   }
   let added = 0, updated = 0, same = 0; const ids = new Set();
   for (const np of r.panels) {
@@ -1319,40 +1381,41 @@ async function importPanels(file) {
   }
   const extra = Lib.own.filter((x) => !ids.has(x.id));
   S.libPrune = extra.map((x) => x.id);
-  S.libNote = `<b>${esc(file.name)}</b>${r.sheet ? `, sheet “${esc(r.sheet)}”` : ''}: ${added} added, ${updated} updated, ${same} unchanged.${skippedHtml(r.skipped)}`
-    + (extra.length ? `<br>${extra.length} of the panels you had here ${extra.length === 1 ? 'is' : 'are'} not in this file. <button class="linkbtn" data-lib="prune">Remove ${extra.length === 1 ? 'it' : 'them'}</button>` : '');
+  S.libNote = `<b>${esc(file.name)}</b>${r.sheet ? tr(', sheet “{sheet}”', { sheet: esc(r.sheet) }) : ''}${tr(': {added} added, {updated} updated, {same} unchanged.', { added, updated, same })}${skippedHtml(r.skipped)}`
+    + (extra.length ? `<br>${trn(extra.length, '{n} of the panels you had here is not in this file.', '{n} of the panels you had here are not in this file.')} <button class="linkbtn" data-lib="prune">${extra.length === 1 ? tr('Remove it') : tr('Remove them')}</button>` : '');
   if (added || updated) Lib.saveOwn(); else Lib.emit();
-  toast(`Read ${r.panels.length} panel${r.panels.length === 1 ? '' : 's'} from ${file.name}`);
+  toast(trn(r.panels.length, 'Read {n} panel from {file}', 'Read {n} panels from {file}', { file: file.name }));
 }
 async function exportPanels() {
   const list = [...Lib.all()].sort(byBrandModel);
-  if (!list.length) { toast('There are no panels to export yet.'); return; }
-  const rows = [['Brand', 'Model', 'Width (mm)', 'Height (mm)', 'Pixels across', 'Pixels down', 'Pitch (mm)', 'Weight (kg)', 'Max power (W)', 'Typical power (W)', 'Stock']];
+  if (!list.length) { toast(tr('There are no panels to export yet.')); return; }
+  // column names the panel import reads again, in either language
+  const rows = [[tr('Brand'), tr('Model'), tr('Width (mm)'), tr('Height (mm)'), tr('Pixels across'), tr('Pixels down'), tr('Pitch (mm)'), tr('Weight (kg)'), tr('Max power (W)'), tr('Typical power (W)'), tr('Stock')]];
   for (const p of list) rows.push([p.brand, p.model || p.name, p.w, p.h, p.px, p.py, Math.round(p.w / p.px * 1000) / 1000, p.kg, p.wMax, p.wAvg, p.stock ?? null]);
-  await Downloads.save('Your_panels.csv', new Blob([csvText(rows)], { type: 'text/csv;charset=utf-8' }));
+  await Downloads.save(`${trc('file', 'Your_panels')}.csv`, new Blob([csvText(rows)], { type: 'text/csv;charset=utf-8' }));
 }
 // panels.xlsx (or panels.csv) next to the planner: everyone who opens the planner from that site gets these panels
 async function loadSitePanels({ announce = false } = {}) {
   if (!/^https?:$/.test(location.protocol)) return;
   for (const file of ['panels.xlsx', 'panels.csv']) {
     let res;
-    try { res = await fetch(file, { cache: 'no-cache' }); } catch (e) { if (announce) toast('Could not reach the site. The last copy of the panel list stays in use.'); return; }
+    try { res = await fetch(file, { cache: 'no-cache' }); } catch (e) { if (announce) toast(tr('Could not reach the site. The last copy of the panel list stays in use.')); return; }
     if (!res.ok || /text\/html/i.test(res.headers.get('content-type') || '')) continue;
     const prev = Lib.site;
     try {
       const r = await Sheets.readPanels(await res.blob(), file);
-      if (!r.header) throw new Error('no column names found. The first rows need names such as Brand, Model, Width (mm), Height (mm), Pixels across and Pixels down.');
+      if (!r.header) throw new Error(`${tr('no column names found.')} ${tr('The first rows need names such as Brand, Model, Width (mm), Height (mm), Pixels across and Pixels down.')}`);
       const changed = !prev || prev.file !== file || JSON.stringify(prev.panels) !== JSON.stringify(r.panels);
       Lib.setSite({ file, sheet: r.sheet || '', panels: r.panels, skipped: r.skipped, loaded: new Date().toISOString() });
-      if (announce || changed) toast(`${prev && prev.file === file ? 'Updated' : 'Loaded'} ${r.panels.length} panel${r.panels.length === 1 ? '' : 's'} from ${file}`);
+      if (announce || changed) toast(prev && prev.file === file ? trn(r.panels.length, 'Updated {n} panel from {file}', 'Updated {n} panels from {file}', { file }) : trn(r.panels.length, 'Loaded {n} panel from {file}', 'Loaded {n} panels from {file}', { file }));
     } catch (e) {
-      Lib.setSite({ file, sheet: '', panels: prev && prev.file === file ? prev.panels : [], skipped: [], error: e.message || 'unreadable', loaded: new Date().toISOString() });
-      toast(`${file} on this site could not be read`);
+      Lib.setSite({ file, sheet: '', panels: prev && prev.file === file ? prev.panels : [], skipped: [], error: e.message || tr('unreadable'), loaded: new Date().toISOString() });
+      toast(tr('{file} on this site could not be read', { file }));
     }
     return;
   }
   if (Lib.site) Lib.setSite(null);
-  if (announce) toast('No panels.xlsx found on this site.');
+  if (announce) toast(tr('No panels.xlsx found on this site.'));
 }
 // once: panels made in projects before there was a panel list become your panels
 function migratePanels() {
@@ -1386,7 +1449,7 @@ function onPanelsChanged() {
 
 function bigPlanModal() {
   const s = active(); if (!s) return; const c = S.comps[s.id]; const mode = planMode();
-  const m = openModal({ title: `${s.name} · ${{ cabinets: 'cabinets', data: 'data cabling', power: 'power' }[mode]}`, body: '<div class="big-plan" id="big-plan"></div><div class="legend" style="border:0;padding:0" id="big-legend"></div>', wide: true });
+  const m = openModal({ title: `${s.name} · ${{ cabinets: trc('plan', 'cabinets'), data: trc('plan', 'data cabling'), power: trc('plan', 'power') }[mode]}`, body: '<div class="big-plan" id="big-plan"></div><div class="legend" style="border:0;padding:0" id="big-legend"></div>', wide: true });
   const box = $('#big-plan', m.body);
   const w = Math.max(320, box.clientWidth || window.innerWidth - 80);
   const fs = clamp(w / 70, 11, 15);
@@ -1398,7 +1461,7 @@ function bigPlanModal() {
 }
 
 /* ---------- exports ---------- */
-function canvasToBlob(canvas) { return new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('The image could not be created.'))), 'image/png')); }
+function canvasToBlob(canvas) { return new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error(tr('The image could not be created.')))), 'image/png')); }
 function pngHeader(pen, title, sub, w) {
   pen.text(title, 40, 52, { size: 30, weight: 700, fill: PRINT_PAL.ink });
   pen.text(sub, 40, 84, { size: 19, fill: PRINT_PAL.ink3 });
@@ -1416,34 +1479,34 @@ async function exportLayoutPNG() {
   cv.height = H;
   const ctx = cv.getContext('2d'); ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, W, H);
   const pen = new CanvasPen(ctx);
-  pngHeader(pen, S.project.name, `Stage layout, front view (developed) · ${[S.project.client, 'Rev ' + (S.project.revision || 'A'), new Date().toLocaleDateString('en-GB')].filter(Boolean).join(' · ')}`, W);
+  pngHeader(pen, S.project.name, `${tr('Stage layout, front view (developed)')} · ${[S.project.client, tr('Rev {rev}', { rev: S.project.revision || 'A' }), fmtDate(Date.now(), {})].filter(Boolean).join(' · ')}`, W);
   const box = { x: 40, y: 110, w: W - 80, h: boxH };
   const f = fitStageView(S.project, S.comps, { x: box.x + fs * 2.4, y: box.y + fs * 1.5, w: box.w - fs * 2.4, h: box.h - fs * 1.5 }, fs, pen, opts);
   drawStage(pen, Object.assign({ project: S.project, comps: S.comps, fs, s: f.s, tx: f.tx, ty: f.ty, box, grid: true }, opts));
   pen.rect(box.x, box.y, box.w, box.h, { fill: 'none', stroke: '#D5DDE5', sw: 2 });
-  await Downloads.save(`${slug(S.project.name)}_layout.png`, await canvasToBlob(cv));
+  await Downloads.save(`${slug(S.project.name)}_${trc('file', 'layout')}.png`, await canvasToBlob(cv));
 }
 async function exportPlanPNG() {
-  const s = active(); if (!s) { toast('Add a screen first.'); return; } const c = S.comps[s.id]; const mode = planMode();
+  const s = active(); if (!s) { toast(tr('Add a screen first.')); return; } const c = S.comps[s.id]; const mode = planMode();
   const W = 2400, fs = 30; const top = 110;
   const ph = clamp(planPx(c, W - 80, fs, true, true), 500, 3200);
   const H = Math.round(top + ph + 40);
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d'); ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, W, H);
   const pen = new CanvasPen(ctx);
-  pngHeader(pen, `${s.name} · ${{ cabinets: 'cabinets and build order', data: 'data cabling', power: 'power circuits' }[mode]}`, `${S.project.name} · ${fmtSize(c.W, c.H)} · ${fmtRes(c.resW, c.resH)} px · ${c.count} cabinets${mode === 'data' ? ` · ${c.ports.length} data ports${S.project.settings.backup ? ' + backup (BK)' : ''}` : ''}`, W);
+  pngHeader(pen, `${s.name} · ${{ cabinets: tr('cabinets and build order'), data: trc('plan', 'data cabling'), power: tr('power circuits') }[mode]}`, `${S.project.name} · ${fmtSize(c.W, c.H)} · ${fmtRes(c.resW, c.resH)} px · ${trn(c.count, '{n} cabinet', '{n} cabinets')}${mode === 'data' ? ` · ${trn(c.ports.length, '{n} data port', '{n} data ports')}${S.project.settings.backup ? tr(' + backup (BK)') : ''}` : ''}`, W);
   drawPlan(pen, c, { x: 40, y: top, w: W - 80, h: ph }, { mode, dims: true, labels: true, pal: Object.assign({}, PRINT_PAL, { cellAlpha: 0.45, panelFill: 0.82 }), fs, screenColor: s.color, prefix: S.project.settings.portPrefix, backup: S.project.settings.backup, minText: 10 });
-  await Downloads.save(`${slug(S.project.name)}_${slug(s.name)}_${mode}.png`, await canvasToBlob(cv));
+  await Downloads.save(`${slug(S.project.name)}_${slug(s.name)}_${{ cabinets: trc('file', 'cabinets'), data: trc('file', 'data'), power: trc('file', 'power') }[mode]}.png`, await canvasToBlob(cv));
 }
 async function exportPixelMap() {
-  const s = active(); if (!s) { toast('Add a screen first.'); return; } const c = S.comps[s.id];
-  if (c.resW > 16384 || c.resH > 16384 || c.resW * c.resH > 100e6) { toast('This screen is too large for a single pixel map image.'); return; }
+  const s = active(); if (!s) { toast(tr('Add a screen first.')); return; } const c = S.comps[s.id];
+  if (c.resW > 16384 || c.resH > 16384 || c.resW * c.resH > 100e6) { toast(tr('This screen is too large for a single pixel map image.')); return; }
   const cv = document.createElement('canvas');
   drawPixelMap(cv, c, S.project);
-  await Downloads.save(`${slug(S.project.name)}_${slug(s.name)}_pixelmap_${c.resW}x${c.resH}.png`, await canvasToBlob(cv));
+  await Downloads.save(`${slug(S.project.name)}_${slug(s.name)}_${trc('file', 'pixelmap')}_${c.resW}x${c.resH}.png`, await canvasToBlob(cv));
 }
 async function exportPDF() {
-  toast('Building the PDF…');
+  toast(tr('Building the PDF…'));
   await new Promise((r) => setTimeout(r, 40));
   let snapshot = null, aspect = 1000 / 1800;
   if (S.project.settings.report3D && View3D.isReady()) {
@@ -1468,19 +1531,20 @@ function csvText(rows) {
   return '﻿' + rows.map((r) => r.map(cell).join(f.sep)).join('\r\n') + '\r\n';
 }
 function csvPackingList(project, comps, plan) {
-  const rows = [['Group', 'Item', 'Quantity', 'Unit', 'Per screen', 'Note', 'Packed', 'Loaded']];
-  for (const it of packingList(project, comps, plan)) rows.push([it.group, it.item, it.unit === 'm' ? Math.round(it.qty * 100) / 100 : it.qty, it.unit === 'm' ? 'm' : 'pcs', it.parts.map((x) => packPart(it, x)).join(' / '), it.note, '', '']);
+  const rows = [[tr('Group'), tr('Item'), tr('Quantity'), tr('Unit'), tr('Per screen'), tr('Note'), tr('Packed'), tr('Loaded')]];
+  for (const it of packingList(project, comps, plan)) rows.push([it.group, it.item, it.unit === 'm' ? Math.round(it.qty * 100) / 100 : it.qty, it.unit === 'm' ? 'm' : tr('pcs'), it.parts.map((x) => packPart(it, x)).join(' / '), it.note, '', '']);
   return csvText(rows);
 }
 function csvCabinetList(project, comps) {
   const st = project.settings;
-  const rows = [['Screen', 'Cabinet', 'Column', 'Row', 'Status', 'Panel', 'Width (mm)', 'Height (mm)', 'Pixels across', 'Pixels down', 'Left edge from screen left (mm)', 'Bottom edge from screen bottom (mm)', 'Pixel x', 'Pixel y', 'Build order', 'Data port', 'Position on port', 'Power circuit', 'Position on circuit']];
+  const rows = [[tr('Screen'), tr('Cabinet'), tr('Column'), tr('Row'), tr('Status'), tr('Panel'), tr('Width (mm)'), tr('Height (mm)'), tr('Pixels across'), tr('Pixels down'), tr('Left edge from screen left (mm)'), tr('Bottom edge from screen bottom (mm)'),
+    tr('Pixel x'), tr('Pixel y'), tr('Build order'), tr('Data port'), tr('Position on port'), tr('Power circuit'), tr('Position on circuit')]];
   for (const s of project.screens) {
     const c = comps[s.id]; if (!c) continue;
     const sorted = [...c.cells].sort((a, b) => a.r - b.r || a.c - b.c);
     for (const k of sorted) {
       const on = k.active;
-      rows.push([s.name, `${colLetter(k.c)}${k.r + 1}`, colLetter(k.c), k.r + 1, on ? 'fitted' : 'empty', k.panel.name, k.w, k.h, k.pw, k.ph, k.x, k.y, k.px0, k.py0,
+      rows.push([s.name, `${colLetter(k.c)}${k.r + 1}`, colLetter(k.c), k.r + 1, on ? tr('fitted') : tr('empty'), k.panel.name, k.w, k.h, k.pw, k.ph, k.x, k.y, k.px0, k.py0,
         on ? k.build : '', on && k.port >= 0 ? `${st.portPrefix || 'P'}${k.port + 1}` : '', on && k.port >= 0 ? k.seq : '',
         on && k.circ >= 0 ? `C${k.circ + 1}` : '', on && k.circ >= 0 ? k.cseq : '']);
     }
@@ -1494,14 +1558,14 @@ async function runExport(kind) {
     else if (kind === 'plan') await exportPlanPNG();
     else if (kind === 'pixmap') await exportPixelMap();
     else if (kind === 'json') await Downloads.save(`${slug(S.project.name)}_rev${slug(S.project.revision || 'A')}.json`, JSON.stringify(S.project, null, 2));
-    else if (kind === 'packing') await Downloads.save(`${slug(S.project.name)}_packing_list.csv`, new Blob([csvPackingList(S.project, S.comps, S.plan)], { type: 'text/csv;charset=utf-8' }));
-    else if (kind === 'cabinets') await Downloads.save(`${slug(S.project.name)}_cabinets.csv`, new Blob([csvCabinetList(S.project, S.comps)], { type: 'text/csv;charset=utf-8' }));
-  } catch (e) { console.error(e); toast(e && e.message ? e.message : 'The export failed.'); }
+    else if (kind === 'packing') await Downloads.save(`${slug(S.project.name)}_${trc('file', 'packing_list')}.csv`, new Blob([csvPackingList(S.project, S.comps, S.plan)], { type: 'text/csv;charset=utf-8' }));
+    else if (kind === 'cabinets') await Downloads.save(`${slug(S.project.name)}_${trc('file', 'cabinets')}.csv`, new Blob([csvCabinetList(S.project, S.comps)], { type: 'text/csv;charset=utf-8' }));
+  } catch (e) { console.error(e); toast(e && e.message ? e.message : tr('The export failed.')); }
 }
 
 /* ---------- boot ---------- */
 function start(hot) {
-  applyTheme(); applyMode();
+  applyTheme(); applyMode(); applyLang();
   Store.probeLocal();
   let p = null;
   if (hot && hot.project) { try { p = normalizeProject(hot.project); } catch (e) { p = null; } }
@@ -1515,7 +1579,7 @@ function start(hot) {
   bindAll();
   renderAll();
   Lib.on(onPanelsChanged);
-  if (migrated) toast(`${migrated} panel${migrated === 1 ? '' : 's'} from your saved projects ${migrated === 1 ? 'is' : 'are'} now in Your panels`);
+  if (migrated) toast(trn(migrated, '{n} panel from your saved projects is now in Your panels', '{n} panels from your saved projects are now in Your panels'));
   loadSitePanels();
   View3D.init($('#view3d'));
   schedule3D(0);
@@ -1546,7 +1610,7 @@ function start(hot) {
     document.fonts.ready.then(redraw);
     if (document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', redraw);
   }
-  window.__lwp = { S, change, undo, redo, recompute, renderAll, View3D, Store, runExport, buildPdfReport, Lib, Sheets, loadSitePanels };
+  window.__lwp = { S, change, undo, redo, recompute, renderAll, View3D, Store, runExport, buildPdfReport, Lib, Sheets, loadSitePanels, setLanguage, TR_MISSING };
 }
 if (window.claude && window.claude.hot && typeof window.claude.hot.ready === 'function') window.claude.hot.ready(start);
 else start((window.claude && window.claude.hot && window.claude.hot.data) || {});
