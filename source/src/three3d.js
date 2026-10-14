@@ -98,8 +98,8 @@ const View3D = (() => {
 
   function themeColors(dark) {
     return dark
-      ? { bg: 0x0a1017, floor: 0x0e1822, minor: 0x18293a, major: 0x27415a, person: 0x8c9aa8, back: 0x1c232c, label: '#E3ECF4', labelBg: 'rgba(10,16,23,0.72)' }
-      : { bg: 0xe6ecf2, floor: 0xd9e1e9, minor: 0xc4cfda, major: 0xa7b6c5, person: 0x6f7d8b, back: 0x2a323c, label: '#14202C', labelBg: 'rgba(255,255,255,0.82)' };
+      ? { bg: 0x0a1017, floor: 0x0e1822, minor: 0x18293a, major: 0x27415a, person: 0x8c9aa8, back: 0x1c232c, support: 0x6b7787, label: '#E3ECF4', labelBg: 'rgba(10,16,23,0.72)' }
+      : { bg: 0xe6ecf2, floor: 0xd9e1e9, minor: 0xc4cfda, major: 0xa7b6c5, person: 0x6f7d8b, back: 0x2a323c, support: 0x7d8a97, label: '#14202C', labelBg: 'rgba(255,255,255,0.82)' };
   }
 
   function applyTheme(dark) {
@@ -196,16 +196,58 @@ const View3D = (() => {
       inst.instanceMatrix.needsUpdate = true;
       group.add(inst);
     }
+    addSupports(group, disposables, s, comp, facets, H, depth, colW, colors);
     const label = labelSprite(s.name, colors); disposables.push(label.material.map, label.material);
     label.position.set(0, H + 0.12, 0);
     group.add(label); group.userData.label = label;
     return { group, dispose: () => disposables.forEach((d) => d && d.dispose && d.dispose()) };
   }
 
+  // Mounting, schematic only: flying bars with chains and hoists on top, a ground-stack base with rear
+  // braces, or a frame of posts and rails behind the cabinets (posts down to the floor).
+  function addSupports(group, disposables, s, comp, facets, H, depth, colW, colors) {
+    const mount = s.mount || 'ground';
+    const mat = new THREE.MeshStandardMaterial({ color: colors.support, roughness: 0.65, metalness: 0.4 }); disposables.push(mat);
+    const q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, 'YXZ'), M = new THREE.Matrix4(), S = new THREE.Vector3();
+    const at = (f, lx, ly, lz) => new THREE.Vector3(lx, ly, lz).applyAxisAngle(Y_AXIS, f.yaw).add(new THREE.Vector3(f.x / 1000, 0, f.z / 1000));
+    const C = facets.length, W = comp.W / 1000;
+    // facets roughly every `step` metres, always both ends
+    const spread = (step) => {
+      if (C === 1) return [0];
+      const n = Math.max(2, Math.min(C, Math.round(W / step) + 1));
+      return [...new Set([...Array(n).keys()].map((i) => Math.round(i * (C - 1) / (n - 1))))];
+    };
+    const items = [];
+    if (mount === 'flown') {
+      for (const f of facets) items.push({ f, lx: 0, ly: H + 0.03, lz: -depth / 2, sx: colW, sy: 0.06, sz: 0.11 });          // flying bar
+      for (const i of spread(2)) {
+        items.push({ f: facets[i], lx: 0, ly: H + 0.66, lz: -depth / 2, sx: 0.025, sy: 1.2, sz: 0.025 });                     // chain
+        items.push({ f: facets[i], lx: 0, ly: H + 1.4, lz: -depth / 2, sx: 0.2, sy: 0.28, sz: 0.2 });                         // hoist
+      }
+    } else if (mount === 'ground') {
+      for (const f of facets) items.push({ f, lx: 0, ly: -0.025, lz: -0.29, sx: colW, sy: 0.05, sz: 0.62 });                  // base
+      const hTop = H * 0.75, d = Math.min(1.6, Math.max(0.6, H * 0.45)), L = Math.hypot(hTop, d);
+      for (const i of spread(2)) items.push({ f: facets[i], lx: 0, ly: hTop / 2, lz: -depth - d / 2, sx: 0.04, sy: L, sz: 0.04, rx: Math.atan2(d, hTop) });   // rear brace
+    } else {
+      const floor = -(num(s.y) || 0) / 1000, zb = -depth - 0.2, m = 0.12;
+      for (const i of spread(3)) items.push({ f: facets[i], lx: 0, ly: (floor + H + 0.1) / 2, lz: zb, sx: m, sy: H + 0.1 - floor, sz: m });   // post
+      for (const f of facets) for (const y of (H > 0.8 ? [0.25, H - 0.25] : [H / 2])) items.push({ f, lx: 0, ly: y, lz: zb, sx: colW, sy: m * 0.7, sz: m * 0.7 });   // rails
+    }
+    if (!items.length) return;
+    const geo = new THREE.BoxGeometry(1, 1, 1); disposables.push(geo);
+    const inst = new THREE.InstancedMesh(geo, mat, items.length);
+    items.forEach((it, k) => {
+      e.set(it.rx || 0, it.f.yaw, 0, 'YXZ'); q.setFromEuler(e); S.set(it.sx, it.sy, it.sz);
+      M.compose(at(it.f, it.lx, it.ly, it.lz), q, S); inst.setMatrixAt(k, M);
+    });
+    inst.instanceMatrix.needsUpdate = true;
+    group.add(inst);
+  }
+
   function contentKey(project, s, face) {
     const used = [s.panel, s.mix && s.mix.small, s.mix && s.mix.big].map((id) => { const p = getPanel(project, id); return [p.id, p.w, p.h, p.px, p.py, p.wMax, p.wAvg]; });
     const st = project.settings;
-    return JSON.stringify([s.name, s.color, s.sizeMode, s.panel, s.cols, s.rows, s.tw, s.th, s.fit, s.mix, s.shape, s.angle, s.holes, s.data, face, used,
+    return JSON.stringify([s.name, s.color, s.sizeMode, s.panel, s.cols, s.rows, s.tw, s.th, s.fit, s.mix, s.shape, s.angle, s.holes, s.data, s.mount, s.mount === 'back' ? s.y : 0, face, used,
       face === 'data' ? [st.portCapacity, st.portPrefix] : 0, face === 'power' ? [st.voltage, st.circuitAmps, st.loadFactor, st.powerFactor, st.powerBasis] : 0]);
   }
 

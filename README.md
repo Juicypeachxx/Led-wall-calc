@@ -15,6 +15,7 @@ It works on a computer, tablet or phone, in Chrome, Safari, Edge or Firefox. Onc
 - **Data:** snake or Z routing along rows or columns from any corner, whole rows or fill to capacity per port (650,000 px per port by default, 325,000 for 10-bit), optional backup cables.
 - **Controller:** suggests a NovaStar VX Pro controller for the whole project, or checks the one you choose, with an output-by-output table.
 - **Power:** circuits from breaker size, voltage, maximum load and power factor, following the data path.
+- **Mounting:** flown, ground stack or back construction for each screen. It sets the build order (flown screens from the top row down, the others from the bottom row up), gives the loads for the rigging or structural design (weight per metre, heaviest column, centre of gravity, front area for wind) and adds flying-bar, base or back-construction lengths to the packing list.
 - **Stage:** several screens on one stage with snapping and alignment, a 3D view with a 1.75 m person for scale.
 - **Exports:** PDF report (overview, 3D view, controller, elevations with build order, data cabling, specifications and power, packing list), layout and plan PNGs, pixel map PNG at native resolution, packing list and cabinet list spreadsheets (CSV), and the project file (JSON).
 
@@ -28,6 +29,7 @@ Projects save automatically in the browser you use, on that device. To move a pr
 - Current is calculated as watts ÷ (volts × power factor); the default power factor is 0.95.
 - Pixels per data port and controller capacities are NovaStar's 8-bit, 60 Hz figures. Colour depth and frame rate change them, so check your processor.
 - Minimum viewing distance uses the 1 m per mm of pixel pitch rule of thumb.
+- Loads are for the cabinets only: flying bars, frames, cables and wind add to them.
 - The planner documents geometry and configuration. It does not check structure, rigging or the electrical installation; have those checked by the responsible engineer.
 
 ## Changing the planner

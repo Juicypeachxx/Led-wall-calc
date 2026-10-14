@@ -109,7 +109,11 @@ function screenSpecs(project, s, c) {
     ['Shape', c.curve ? `${c.curve.shape[0].toUpperCase() + c.curve.shape.slice(1)}, ${fmtNum(c.curve.angle, 2)}° per column, ${fmtNum(c.curve.arc, 1)}° total, radius ${fmtM(c.curve.rIn, 2)} m` : 'Flat'],
     ['Position', `Centre ${fmtM(s.x, 2)} m from CL, bottom ${fmtM(s.y, 2)} m above floor${s.z ? `, ${fmtM(s.z, 2)} m forward` : ''}${s.yaw ? `, yaw ${fmtNum(s.yaw, 1)}°` : ''}`],
     ['Weight', `${fmtKg(c.weight)}${typicalNote(c)}, cabinets only`],
-    ['Heaviest column', c.heaviestCol ? `${fmtKg(c.heaviestCol.kg)} (column ${colLetter(c.heaviestCol.col)}), cabinets only, without rigging` : 'no data'],
+    ['Mounting', MOUNTS[c.support.mount].long],
+    ['Load per metre', c.support.kgPerM === null ? 'no data' : `${fmtInt(c.support.kgPerM)} kg per metre ${{ flown: 'along the flying bars', ground: 'along the base', back: 'of width on the back construction' }[c.support.mount]}`],
+    ['Heaviest column', c.heaviestCol ? `${fmtKg(c.heaviestCol.kg)} (column ${colLetter(c.heaviestCol.col)})${c.support.mount === 'ground' ? `, tallest column ${c.support.tallest.cabinets} cabinet${c.support.tallest.cabinets === 1 ? '' : 's'} high` : ''}` : 'no data'],
+    ['Centre of gravity', c.support.cog === null ? 'no data' : `${fmtM(c.support.cog, 2)} m above the floor`],
+    ['Front area (wind)', `${fmtNum(c.support.frontArea, 2)} m²${c.curve ? `, ${fmtM(c.support.projW, 2)} m wide seen from the front` : ''}`],
     ['Power, max / typical', `${fmtW(c.wMax)} / ${fmtW(c.wAvg)}${typicalNote(c)}`],
     ['Current at max', amps === null ? 'no data' : `${fmtNum(amps, 1)} A at ${fmtInt(st.voltage)} V single-phase · ${fmtNum(amps3, 1)} A per phase on 3-phase (power factor ${fmtNum(pf, 2)})`],
     ['Data ports', `${c.ports.length} × ${fmtInt(st.portCapacity)} px${st.backup ? `, plus ${c.ports.length} backup` : ''}`],
@@ -264,14 +268,14 @@ async function buildPdfReport(project, comps, totals, opts) {
     const c = comps[s.id];
     const tag = `${idx + 1}/${screens.length}`;
     // A: elevation
-    const notes = ['Numbers show the build order: up the first column from bottom left, then down the next. Letters name columns, numbers name rows from the bottom.'];
+    const notes = [`Numbers show the build order for a ${MOUNTS[c.support.mount].label.toLowerCase()} screen: ${buildOrderText(c.support.mount)}. Letters name columns, numbers name rows from the bottom.`];
     if (c.holes) notes.push(`${c.holes} cabinet position${c.holes === 1 ? ' is' : 's are'} left empty (dashed).`);
     if (c.curve) notes.push(`Curved ${c.curve.shape}: ${fmtNum(c.curve.angle, 2)}° between columns, ${fmtNum(c.curve.arc, 1)}° in total, radius ${fmtM(c.curve.rIn, 2)} m to the front face, chord ${fmtM(c.curve.chord, 2)} m, depth ${fmtM(c.curve.depth, 2)} m. Radius is calculated; confirm with the curve brackets available.`);
     const noteLines = pdfWrap(pen, notes.join(' '), PAGE.w - 2 * PAGE.m, { size: 2.4 });
     // text under the drawing: one line per panel type, the summary line, then the notes; the drawing takes what is left
     const textH = Object.keys(c.byPanel).length * 5 + 7 + noteLines.length * 3.4;
     const elevH = Math.min(140, PAGE.bottom + 2 - PAGE.top - textH - 7);
-    pages.push({ title: `${s.name} — front elevation`, sub: `screen ${tag} · cabinet build order${c.curve ? ' · developed view' : ''}`, draw: () => {
+    pages.push({ title: `${s.name} — front elevation`, sub: `screen ${tag} · ${MOUNTS[c.support.mount].label.toLowerCase()} · cabinet build order${c.curve ? ' · developed view' : ''}`, draw: () => {
       drawPlan(pen, c, { x: PAGE.m, y: PAGE.top, w: PAGE.w - 2 * PAGE.m, h: elevH }, { mode: 'cabinets', dims: true, labels: true, pal: PRINT_PAL, fs: 3.1, screenColor: s.color, minText: 1.4, minStroke: 0.12, prefix: st.portPrefix });
       let y = PAGE.top + elevH + 7;
       for (const b of Object.values(c.byPanel)) {
@@ -332,7 +336,8 @@ async function buildPdfReport(project, comps, totals, opts) {
         let y = pdfKeyValues(pen, PAGE.m, PAGE.top + 8, lw, screenSpecs(project, s, c), { size: 2.6, lh: 5.0 });
         y += 3; pen.text('CABINETS', PAGE.m, y, { font: 'cond', size: 3, fill: PDF_INK3 }); y += 2.5;
         const bom = Object.values(c.byPanel).map((b) => ({ type: b.panel.name, qty: b.count, size: `${fmtNum(b.panel.w, 1)} × ${fmtNum(b.panel.h, 1)}`, res: `${b.panel.px} × ${b.panel.py}`, kg: b.panel.kg === null ? '—' : fmtNum(b.panel.kg * b.count, 0), w: b.panel.wMax === null ? '—' : fmtInt(b.panel.wMax * b.count) }));
-        pdfTable(pen, PAGE.m, y, [{ key: 'type', label: 'Type', w: 46 }, { key: 'qty', label: 'Qty', w: 12, align: 'right' }, { key: 'size', label: 'Size (mm)', w: 22, align: 'right' }, { key: 'res', label: 'Pixels', w: 18, align: 'right' }, { key: 'kg', label: 'kg', w: 13, align: 'right' }, { key: 'w', label: 'Max W', w: 17, align: 'right' }], bom, { rh: 5.0, size: 2.5 });
+        let yb = pdfTable(pen, PAGE.m, y, [{ key: 'type', label: 'Type', w: 46 }, { key: 'qty', label: 'Qty', w: 12, align: 'right' }, { key: 'size', label: 'Size (mm)', w: 22, align: 'right' }, { key: 'res', label: 'Pixels', w: 18, align: 'right' }, { key: 'kg', label: 'kg', w: 13, align: 'right' }, { key: 'w', label: 'Max W', w: 17, align: 'right' }], bom, { rh: 5.0, size: 2.5 }) + 4;
+        for (const ln of pdfWrap(pen, 'Weights, loads and the centre of gravity are for the cabinets only: flying bars, frames, cables and wind add to them. They are a starting point for the rigging or structural design, which a qualified person must do and check.', lw, { size: 2.3 })) { if (yb > PAGE.bottom) break; pen.text(ln, PAGE.m, yb, { size: 2.3, fill: PDF_INK3 }); yb += 3.2; }
         pen.text('POWER CIRCUITS', px, PAGE.top + 3, { font: 'cond', size: 3, fill: PDF_INK3 });
         if (!c.power) { pen.text('Add weight and power values to the panel to plan circuits.', px, PAGE.top + 10, { size: 2.7, fill: PDF_INK2 }); return; }
         drawPlan(pen, c, { x: px, y: PAGE.top + 5, w: pw, h: ph }, { mode: 'power', dims: false, labels: true, pal: PRINT_PAL, fs: 2.6, screenColor: s.color, minText: 1.3, minStroke: 0.1, prefix: st.portPrefix });
@@ -359,7 +364,7 @@ async function buildPdfReport(project, comps, totals, opts) {
     const size = 2.4, lh = 3.1, HEAD = 5.6;
     const rows = items.map((it) => {
       const cell = (txt, key, o = {}) => pdfWrap(pen, txt, pc.find((c) => c.key === key).w - 3.2, Object.assign({ size }, o));
-      const item = cell(it.item, 'item', { weight: 600 }), per = cell(it.parts.map((x) => `${x.name}: ${x.n}`).join('  ·  '), 'per'), note = cell(it.note, 'note');
+      const item = cell(it.item, 'item', { weight: 600 }), per = cell(it.parts.map((x) => packPart(it, x)).join('  ·  '), 'per'), note = cell(it.note, 'note');
       return { it, item, per, note, h: Math.max(1, item.length, per.length, note.length) * lh + 2.4 };
     });
     const chunks = []; let cur = [], yy = PAGE.top + 2 + HEAD;
@@ -380,7 +385,7 @@ async function buildPdfReport(project, comps, totals, opts) {
           for (const c of pc) {
             if (c.key === 'pk' || c.key === 'ld') pen.rect(x + c.w / 2 - 1.6, y + 1.1, 3.2, 3.2, { fill: '#FFFFFF', stroke: PDF_INK2, sw: 0.25, rx: 0.3 });
             else if (c.key === 'group') pen.text(r.it.group, x + 1.6, ty, { size, fill: PDF_INK3 });
-            else if (c.key === 'qty') pen.text(fmtInt(r.it.qty), x + c.w - 1.6, ty, { size, weight: 600, fill: PDF_INK, anchor: 'end' });
+            else if (c.key === 'qty') pen.text(packQty(r.it), x + c.w - 1.6, ty, { size, weight: 600, fill: PDF_INK, anchor: 'end' });
             else r[c.key].forEach((ln, k) => pen.text(ln, x + 1.6, ty + k * lh, { size, weight: c.key === 'item' ? 600 : 400, fill: c.key === 'note' ? PDF_INK3 : PDF_INK }));
             x += c.w;
           }

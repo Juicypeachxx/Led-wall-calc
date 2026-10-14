@@ -240,7 +240,7 @@ function drawStage(pen, v) {
     const comp = comps[sc.id]; if (!comp) continue;
     const left = sc.x - comp.W / 2;
     const sx = X(left), sy = Y(sc.y + comp.H), sw = comp.W * s, sh = comp.H * s;
-    rects.set(sc.id, { sx, sy, sw, sh });
+    rects.set(sc.id, { sx, sy, sw, sh, top: sy - (sc.mount === 'flown' ? fs * 1.15 : 0) });   // top: above the chains of a flown screen
     const cellPx = Math.min(comp.colW, ...comp.rowPanels.map((p) => p.h)) * s;
     const seam = v.print ? 0.18 : clamp(cellPx * 0.06, 0.5, 1.2);
     if (cellPx >= 3 && comp.cells.length <= 1500) {
@@ -259,6 +259,25 @@ function drawStage(pen, v) {
       }
     }
     pen.rect(sx, sy, sw, sh, { fill: 'none', stroke: mix(sc.color, pal.ink, 0.35), sw: v.print ? 0.3 : 1 });
+    // mounting, schematic: flying bar with chains on top, ground-stack base underneath, or the frame behind
+    const mk = pal.ink2, thin = v.print ? 0.18 : 0.9, dash = v.print ? [0.8, 0.5] : [4, 3];
+    const bh = Math.max(v.print ? 0.45 : 2, Math.min(sh * 0.25, fs * 0.3));
+    if (sc.mount === 'flown') {
+      pen.rect(sx - fs * 0.1, sy - bh, sw + fs * 0.2, bh, { fill: mk });
+      const n = Math.max(1, Math.min(9, Math.round(comp.W / 2000) + 1, Math.floor(sw / (fs * 0.8)) + 1));
+      for (let i = 0; i < n; i++) {
+        const x = n === 1 ? sx + sw / 2 : sx + sw * (0.06 + 0.88 * i / (n - 1));
+        pen.line(x, sy - bh, x, sy - fs * 0.85, { stroke: mk, sw: thin * 1.6 });
+        pen.circle(x, sy - fs * 0.97, fs * 0.12, { fill: 'none', stroke: mk, sw: thin * 1.3 });
+      }
+    } else if (sc.mount === 'ground') {
+      pen.rect(sx - fs * 0.3, sy + sh - bh, sw + fs * 0.6, bh, { fill: mk });
+      for (const x of [sx - fs * 0.3, sx + sw + fs * 0.3 - thin * 2]) pen.rect(x, sy + sh - bh - fs * 0.35, thin * 2, fs * 0.35, { fill: mk });
+    } else if (sc.mount === 'back') {
+      const o = fs * 0.3;
+      pen.rect(sx - o, sy - o, sw + 2 * o, sh + 2 * o, { fill: 'none', stroke: mk, sw: thin, dash });
+      if (Y(0) > sy + sh + o + 0.5) for (const x of [sx - o, sx + sw + o]) pen.line(x, sy + sh + o, x, Y(0), { stroke: mk, sw: thin, dash });
+    }
     if (v.interactive) pen.rect(sx, sy, sw, sh, { fill: '#000', opacity: 0, attrs: { 'data-sid': sc.id, class: 'hit' } });
   }
 
@@ -278,21 +297,21 @@ function drawStage(pen, v) {
   const byArea = order.filter((sc) => comps[sc.id] && rects.get(sc.id)).sort((a, b) => comps[b.id].W * comps[b.id].H - comps[a.id].W * comps[a.id].H);
   const below = new Map();
   for (const sc of byArea) {
-    const { sx, sy, sw, sh } = rects.get(sc.id);
+    const { sx, sw, sh, sy, top } = rects.get(sc.id);
     const need = (v.labels ? fs * 1.3 : 0) + (v.dims ? fs * 2.0 : 0) + fs * 0.3;
-    below.set(sc.id, need > fs * 0.3 && hitsScreen({ x0: sx, x1: sx + sw, y0: sy - need, y1: sy }, sc.id) && !hitsScreen({ x0: sx, x1: sx + sw, y0: sy + sh, y1: sy + sh + need }, sc.id));
+    below.set(sc.id, need > fs * 0.3 && hitsScreen({ x0: sx, x1: sx + sw, y0: top - need, y1: top }, sc.id) && !hitsScreen({ x0: sx, x1: sx + sw, y0: sy + sh, y1: sy + sh + need }, sc.id));
   }
   let lowest = 0;
   // everything drawn, in pen units, so callers can fit the whole drawing (labels and dimensions included)
   const ext = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
   const grow = (b) => { ext.x0 = Math.min(ext.x0, b.x0); ext.y0 = Math.min(ext.y0, b.y0); ext.x1 = Math.max(ext.x1, b.x1); ext.y1 = Math.max(ext.y1, b.y1); };
-  for (const r of rects.values()) grow({ x0: r.sx, y0: r.sy, x1: r.sx + r.sw, y1: r.sy + r.sh });
+  for (const r of rects.values()) grow({ x0: r.sx, y0: r.top, x1: r.sx + r.sw, y1: r.sy + r.sh });
   const keep = (b) => { placed.push(b); grow(b); if (b.y1 > Y(0)) lowest = Math.max(lowest, b.y1 - Y(0)); };
   if (v.dims) {
     for (const sc of byArea) {
-      const comp = comps[sc.id]; const { sx, sy, sw, sh } = rects.get(sc.id);
+      const comp = comps[sc.id]; const { sx, sy, sw, sh, top } = rects.get(sc.id);
       // width: a dimension line above (or below) the screen, moved further out past anything in the way
-      const up = (k) => ({ y: sy - fs * 1.05 - k * fs * 1.3, up: true, k });
+      const up = (k) => ({ y: top - fs * 1.05 - k * fs * 1.3, up: true, k });
       const dn = (k) => ({ y: sy + sh + fs * 1.05 + k * fs * 1.3, up: false, k });
       const wc = below.get(sc.id) ? [dn(0), up(0), dn(1), dn(2), dn(3), up(1), up(2), up(3)] : [up(0), dn(0), up(1), up(2), up(3), dn(1), dn(2), dn(3)];
       const wBox = (c) => (c.up ? { x0: sx - dop.tick, x1: sx + sw + dop.tick, y0: c.y - fs * 0.95, y1: c.y + dop.tick } : { x0: sx - dop.tick, x1: sx + sw + dop.tick, y0: c.y - dop.tick, y1: c.y + fs * 1.0 });
@@ -320,7 +339,7 @@ function drawStage(pen, v) {
   const labelJobs = [];
   if (v.labels) {
     for (const sc of byArea) {
-      const comp = comps[sc.id]; const { sx, sy, sw, sh } = rects.get(sc.id);
+      const comp = comps[sc.id]; const { sx, sy, sw, sh, top } = rects.get(sc.id);
       const extra = [];
       if (comp.curve) extra.push(`${comp.curve.shape === 'concave' ? 'curved in' : 'curved out'} ${fmtNum(comp.curve.arc, 1)}°`);
       if (sc.yaw) extra.push(`yaw ${fmtNum(sc.yaw, 1)}°`);
@@ -331,10 +350,10 @@ function drawStage(pen, v) {
       const mw = pen.measure(meta, { size: metaSize });
       const lw = nw + fs * 0.5 + mw;
       const xs = [sx, sx + sw - lw, sx + sw / 2 - lw / 2];
-      const aboveYs = [sy - fs * 0.55, sy - fs * 2.55], belowYs = [sy + sh + fs * 1.25, sy + sh + fs * 3.35];
+      const aboveYs = [top - fs * 0.55, top - fs * 2.55], belowYs = [sy + sh + fs * 1.25, sy + sh + fs * 3.35];
       const cands = [];
       for (const y of (below.get(sc.id) ? [...belowYs, ...aboveYs] : [...aboveYs, ...belowYs])) for (const x of xs) cands.push({ x, y });
-      for (let k = 1; k <= 6; k++) for (const x of xs) cands.push({ x, y: sy - fs * 2.55 - k * fs * 1.45, lead: true });
+      for (let k = 1; k <= 6; k++) for (const x of xs) cands.push({ x, y: top - fs * 2.55 - k * fs * 1.45, lead: true });
       const boxOf = (c) => ({ x0: c.x - fs * 0.25, x1: c.x + lw + fs * 0.25, y0: c.y - nameSize * 0.95, y1: c.y + nameSize * 0.35 });
       const pick = choose(cands, boxOf, sc.id) || cands[0];
       keep(boxOf(pick));

@@ -384,7 +384,7 @@ details.more > div { margin-top: 8px; }
         </div>
       </div>
       <div class="stage-wrap" id="stage-wrap"><svg id="stage-svg" role="img" aria-label="Stage layout, front view"></svg></div>
-      <div class="card-foot">Drag a screen to move it. Shift-click selects several. Scroll or pinch to zoom, drag empty space to pan. Hold Alt while dragging to skip snapping. Screens are drawn flat (developed); yaw, depth and curves show in the 3D view.</div>
+      <div class="card-foot">Drag a screen to move it. Shift-click selects several. Scroll or pinch to zoom, drag empty space to pan. Hold Alt while dragging to skip snapping. Screens are drawn flat (developed); yaw, depth and curves show in the 3D view. A bar with chains on top marks a flown screen, a bar underneath a ground stack, a dashed frame a back construction.</div>
     </div>
     <div class="card">
       <div class="card-head">
@@ -1962,14 +1962,30 @@ function fmtPitch(p) { return (Math.round(pitchOf(p) * 1000) / 1000).toFixed(3);
 
 /* ---------- screen kinds (presets for "Add screen") ---------- */
 const KINDS = {
-  main: { label: 'Main', panel: 'g50100-39', cols: 16, rows: 4 },
-  side: { label: 'Side', panel: 'g5050-39', cols: 4, rows: 6 },
-  totem: { label: 'Totem', panel: 'g50100-39', cols: 2, rows: 4 },
-  banner: { label: 'Banner / fascia', panel: 'g5050-39', cols: 20, rows: 1 },
-  dj: { label: 'DJ booth front', panel: 'g5050-39', cols: 6, rows: 2 },
-  arc: { label: 'Arc / cylinder', panel: 'g5050-39', cols: 16, rows: 4, shape: 'concave', angle: 7.5 },
-  free: { label: 'Free', panel: 'g5050-39', cols: 4, rows: 3 },
+  main: { label: 'Main', panel: 'g50100-39', cols: 16, rows: 4, mount: 'flown' },
+  side: { label: 'Side', panel: 'g5050-39', cols: 4, rows: 6, mount: 'flown' },
+  totem: { label: 'Totem', panel: 'g50100-39', cols: 2, rows: 4, mount: 'ground' },
+  banner: { label: 'Banner / fascia', panel: 'g5050-39', cols: 20, rows: 1, mount: 'flown' },
+  dj: { label: 'DJ booth front', panel: 'g5050-39', cols: 6, rows: 2, mount: 'ground' },
+  arc: { label: 'Arc / cylinder', panel: 'g5050-39', cols: 16, rows: 4, shape: 'concave', angle: 7.5, mount: 'ground' },
+  free: { label: 'Free', panel: 'g5050-39', cols: 4, rows: 3, mount: 'ground' },
 };
+
+/* ---------- how a screen is held up ----------
+   The mounting sets the build order: a flown screen is hung from the top row down (the top row goes on
+   the flying bars, the hoists lift, the next row goes underneath); a ground stack and a screen fixed to a
+   back construction are built from the bottom row up. */
+const MOUNTS = {
+  flown: { label: 'Flown', long: 'Flown (hung from flying bars)' },
+  ground: { label: 'Ground stack', long: 'Ground stack (standing on a base)' },
+  back: { label: 'Back construction', long: 'Back construction (fixed to a truss or scaffold frame)' },
+};
+const MOUNT_ORDER = ['flown', 'ground', 'back'];
+function buildOrderText(mount) {
+  return mount === 'flown'
+    ? 'top row first, left to right, then each row below (a flown screen is hung from the top down)'
+    : 'bottom row first, left to right, then each row above';
+}
 const KIND_ORDER = ['main', 'side', 'totem', 'banner', 'dj', 'arc', 'free'];
 
 /* ---------- NovaStar controllers (from NovaStar specifications; capacities at 8-bit) ----------
@@ -2002,7 +2018,7 @@ function defaultScreen(kind = 'free') {
   return {
     id: uid('s-'), name: k.label, kind, color: SCREEN_COLORS[0],
     x: 0, y: 0, z: 0, yaw: 0,
-    panel: k.panel, sizeMode: 'grid', cols: k.cols, rows: k.rows,
+    panel: k.panel, sizeMode: 'grid', cols: k.cols, rows: k.rows, mount: k.mount || 'ground',
     tw: 4, th: 2.5, fit: 'nearest',
     mix: { small: 'g5050-39', big: 'g50100-39', w: 4, h: 2.5, stock: 20 },
     shape: k.shape || 'flat', angle: k.angle || 5,
@@ -2077,6 +2093,8 @@ function normalizeProject(raw) {
     s.mix = Object.assign(defaultScreen().mix, s.mix || {});
     s.mix.w = clamp(num(s.mix.w, 4), 0.1, 200); s.mix.h = clamp(num(s.mix.h, 2.5), 0.1, 100); s.mix.stock = clamp(int(s.mix.stock, 0), 0, 100000);
     s.shape = ['flat', 'concave', 'convex'].includes(s.shape) ? s.shape : 'flat';
+    // projects saved before the mounting option: a screen standing on the floor is a ground stack, one higher up is flown
+    s.mount = MOUNTS[rs.mount] ? rs.mount : (s.y > 0 ? 'flown' : 'ground');
     s.angle = clamp(num(s.angle, 5), 0.5, 45);
     s.holes = Array.isArray(s.holes) ? s.holes.filter((k) => typeof k === 'string' && /^\d+,\d+$/.test(k)).slice(0, 20000) : [];
     s.data = Object.assign({ dir: 'h', start: 'bl', path: 'snake', split: 'lines' }, s.data || {});
@@ -2252,8 +2270,10 @@ function computeScreen(project, s) {
   }
   const active = cells.filter((c) => c.active);
 
-  // build order numbers: vertical serpentine from bottom-left (typical ground-stack build order)
-  { let n = 0; for (let c = 0; c < cols; c++) { const up = c % 2 === 0; for (let i = 0; i < R; i++) { const r = up ? i : R - 1 - i; const cell = grid[r][c]; if (cell.active) cell.build = ++n; } } }
+  // build order numbers, row by row and left to right: from the top row down for a flown screen,
+  // from the bottom row up for a ground stack or a back construction (see MOUNTS)
+  { let n = 0; const rowsInOrder = [...Array(R).keys()]; if (s.mount === 'flown') rowsInOrder.reverse();
+    for (const r of rowsInOrder) for (let c = 0; c < cols; c++) { const cell = grid[r][c]; if (cell.active) cell.build = ++n; } }
 
   // counts by panel type
   const byPanel = {};
@@ -2321,6 +2341,19 @@ function computeScreen(project, s) {
     curve = { shape: s.shape, angle: a, arc, closed, rIn, rOut, chord, depth };
   }
 
+  // key figures for whoever designs the rigging or structure (cabinets only: no bars, frames, cables or wind)
+  const colCount = new Array(cols).fill(0); for (const c of active) colCount[c.c]++;
+  let tallestIdx = 0; for (let i = 1; i < cols; i++) if (colCount[i] > colCount[tallestIdx]) tallestIdx = i;
+  const projW = curve ? (curve.arc <= 180 ? curve.chord : 2 * curve.rOut) : W;
+  const support = {
+    mount: MOUNTS[s.mount] ? s.mount : 'ground',
+    kgPerM: weight !== null ? weight / (W / 1000) : null,                              // along the bars, base or frame (developed width)
+    cog: weight ? num(s.y) + sum(active, (c) => c.panel.kg * (c.y + c.h / 2)) / weight : null,   // centre of gravity, mm above the floor
+    frontArea: projW * H / 1e6,                                                       // m², seen from the front
+    projW,
+    tallest: { col: tallestIdx, cabinets: colCount[tallestIdx] },
+  };
+
   if (info.target) {
     const dw = W - info.target.w, dh = H - info.target.h;
     info.target.dw = dw; info.target.dh = dh;
@@ -2329,7 +2362,7 @@ function computeScreen(project, s) {
   return {
     id: s.id, screen: s, cols, rows: R, rowPanels, rowY, W, H, resW, resH, cells, grid, active,
     count: active.length, holes: cells.length - active.length, byPanel, pixels, area, envelope,
-    weight, heaviestCol, wMax, wAvg, ratio, ports, power, curve, colW, warnings, info, lines,
+    weight, heaviestCol, wMax, wAvg, ratio, ports, power, curve, colW, warnings, info, lines, support,
   };
 }
 
@@ -2450,6 +2483,15 @@ function packingList(project, comps, plan) {
   add('Data', 'Data link cable, cabinet to next cabinet', per((c) => sum(dl.get(c.id), (x) => x.short)));
   const lengths = (f) => { const all = new Set(); for (const { s } of list) for (const x of f(s.id)) for (const L of x.long) all.add(L); return [...all].sort((a, b) => a - b); };
   for (const L of lengths((id) => dl.get(id))) add('Data', `Data link cable, at least ${L} m`, per((c) => sum(dl.get(c.id), (x) => x.long.filter((v) => v === L).length)), 'across an empty position, a Z return or a row change');
+  // rigging: lengths to cover, since the hardware itself depends on the cabinet system
+  const byMount = (m) => list.filter(({ s }) => (MOUNTS[s.mount] ? s.mount : 'ground') === m);
+  const metres = (group, item, sel, note, withHeight = false) => {
+    const parts = sel.map(({ s, c }) => ({ name: s.name, n: c.W / 1000, label: withHeight ? `${fmtNum(c.W / 1000, 2)} m wide, ${fmtNum(c.H / 1000, 2)} m high` : `${fmtNum(c.W / 1000, 2)} m` }));
+    if (parts.length) items.push({ group, item, qty: sum(parts, (x) => x.n), unit: 'm', parts, note });
+  };
+  metres('Rigging', 'Flying bars along the top edge', byMount('flown'), 'hanging points and hoists per the rigging plan');
+  metres('Rigging', 'Ground-stack base along the bottom edge', byMount('ground'), 'plus rear braces or outriggers as the cabinet system requires');
+  metres('Rigging', 'Back construction (truss or scaffold) behind the screen', byMount('back'), 'as designed by the structural engineer', true);
   // power
   if (list.length && list.every(({ c }) => c.power)) {
     add('Power', `Power feed cable, one per ${fmtInt(st.circuitAmps)} A circuit`, per((c) => c.power.circuits.length), 'length to suit the distribution');
@@ -2459,6 +2501,9 @@ function packingList(project, comps, plan) {
   }
   return items;
 }
+
+function packQty(it) { return it.unit === 'm' ? `${fmtNum(it.qty, 2)} m` : fmtInt(it.qty); }
+function packPart(it, x) { return `${x.name}: ${x.label || (it.unit === 'm' ? `${fmtNum(x.n, 2)} m` : fmtInt(x.n))}`; }
 
 /* ---------- 16:9 suggestions ---------- */
 function suggest169(p, curCols, curRows) {
@@ -2519,7 +2564,7 @@ function uniqueName(project, base) {
 if (typeof module !== 'undefined') {
   module.exports = { BUILTIN_PANELS, KINDS, CONTROLLERS, computeScreen, computeTotals, suggest169, exampleProject, blankProject, normalizeProject,
     ratioInfo, splitLines, orderLines, facetTransforms, colLetter, slug, fmtInt, fmtM, fmtSize, getPanel, defaultScreen, placeNewScreen, holesInGrid, defaultSettings,
-    planControllers, assignControllers, packingList, chainLinks };
+    planControllers, assignControllers, packingList, chainLinks, MOUNTS, MOUNT_ORDER, buildOrderText, packQty, packPart };
 }
 
 /* ============================================================
@@ -2947,7 +2992,7 @@ function drawStage(pen, v) {
     const comp = comps[sc.id]; if (!comp) continue;
     const left = sc.x - comp.W / 2;
     const sx = X(left), sy = Y(sc.y + comp.H), sw = comp.W * s, sh = comp.H * s;
-    rects.set(sc.id, { sx, sy, sw, sh });
+    rects.set(sc.id, { sx, sy, sw, sh, top: sy - (sc.mount === 'flown' ? fs * 1.15 : 0) });   // top: above the chains of a flown screen
     const cellPx = Math.min(comp.colW, ...comp.rowPanels.map((p) => p.h)) * s;
     const seam = v.print ? 0.18 : clamp(cellPx * 0.06, 0.5, 1.2);
     if (cellPx >= 3 && comp.cells.length <= 1500) {
@@ -2966,6 +3011,25 @@ function drawStage(pen, v) {
       }
     }
     pen.rect(sx, sy, sw, sh, { fill: 'none', stroke: mix(sc.color, pal.ink, 0.35), sw: v.print ? 0.3 : 1 });
+    // mounting, schematic: flying bar with chains on top, ground-stack base underneath, or the frame behind
+    const mk = pal.ink2, thin = v.print ? 0.18 : 0.9, dash = v.print ? [0.8, 0.5] : [4, 3];
+    const bh = Math.max(v.print ? 0.45 : 2, Math.min(sh * 0.25, fs * 0.3));
+    if (sc.mount === 'flown') {
+      pen.rect(sx - fs * 0.1, sy - bh, sw + fs * 0.2, bh, { fill: mk });
+      const n = Math.max(1, Math.min(9, Math.round(comp.W / 2000) + 1, Math.floor(sw / (fs * 0.8)) + 1));
+      for (let i = 0; i < n; i++) {
+        const x = n === 1 ? sx + sw / 2 : sx + sw * (0.06 + 0.88 * i / (n - 1));
+        pen.line(x, sy - bh, x, sy - fs * 0.85, { stroke: mk, sw: thin * 1.6 });
+        pen.circle(x, sy - fs * 0.97, fs * 0.12, { fill: 'none', stroke: mk, sw: thin * 1.3 });
+      }
+    } else if (sc.mount === 'ground') {
+      pen.rect(sx - fs * 0.3, sy + sh - bh, sw + fs * 0.6, bh, { fill: mk });
+      for (const x of [sx - fs * 0.3, sx + sw + fs * 0.3 - thin * 2]) pen.rect(x, sy + sh - bh - fs * 0.35, thin * 2, fs * 0.35, { fill: mk });
+    } else if (sc.mount === 'back') {
+      const o = fs * 0.3;
+      pen.rect(sx - o, sy - o, sw + 2 * o, sh + 2 * o, { fill: 'none', stroke: mk, sw: thin, dash });
+      if (Y(0) > sy + sh + o + 0.5) for (const x of [sx - o, sx + sw + o]) pen.line(x, sy + sh + o, x, Y(0), { stroke: mk, sw: thin, dash });
+    }
     if (v.interactive) pen.rect(sx, sy, sw, sh, { fill: '#000', opacity: 0, attrs: { 'data-sid': sc.id, class: 'hit' } });
   }
 
@@ -2985,21 +3049,21 @@ function drawStage(pen, v) {
   const byArea = order.filter((sc) => comps[sc.id] && rects.get(sc.id)).sort((a, b) => comps[b.id].W * comps[b.id].H - comps[a.id].W * comps[a.id].H);
   const below = new Map();
   for (const sc of byArea) {
-    const { sx, sy, sw, sh } = rects.get(sc.id);
+    const { sx, sw, sh, sy, top } = rects.get(sc.id);
     const need = (v.labels ? fs * 1.3 : 0) + (v.dims ? fs * 2.0 : 0) + fs * 0.3;
-    below.set(sc.id, need > fs * 0.3 && hitsScreen({ x0: sx, x1: sx + sw, y0: sy - need, y1: sy }, sc.id) && !hitsScreen({ x0: sx, x1: sx + sw, y0: sy + sh, y1: sy + sh + need }, sc.id));
+    below.set(sc.id, need > fs * 0.3 && hitsScreen({ x0: sx, x1: sx + sw, y0: top - need, y1: top }, sc.id) && !hitsScreen({ x0: sx, x1: sx + sw, y0: sy + sh, y1: sy + sh + need }, sc.id));
   }
   let lowest = 0;
   // everything drawn, in pen units, so callers can fit the whole drawing (labels and dimensions included)
   const ext = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
   const grow = (b) => { ext.x0 = Math.min(ext.x0, b.x0); ext.y0 = Math.min(ext.y0, b.y0); ext.x1 = Math.max(ext.x1, b.x1); ext.y1 = Math.max(ext.y1, b.y1); };
-  for (const r of rects.values()) grow({ x0: r.sx, y0: r.sy, x1: r.sx + r.sw, y1: r.sy + r.sh });
+  for (const r of rects.values()) grow({ x0: r.sx, y0: r.top, x1: r.sx + r.sw, y1: r.sy + r.sh });
   const keep = (b) => { placed.push(b); grow(b); if (b.y1 > Y(0)) lowest = Math.max(lowest, b.y1 - Y(0)); };
   if (v.dims) {
     for (const sc of byArea) {
-      const comp = comps[sc.id]; const { sx, sy, sw, sh } = rects.get(sc.id);
+      const comp = comps[sc.id]; const { sx, sy, sw, sh, top } = rects.get(sc.id);
       // width: a dimension line above (or below) the screen, moved further out past anything in the way
-      const up = (k) => ({ y: sy - fs * 1.05 - k * fs * 1.3, up: true, k });
+      const up = (k) => ({ y: top - fs * 1.05 - k * fs * 1.3, up: true, k });
       const dn = (k) => ({ y: sy + sh + fs * 1.05 + k * fs * 1.3, up: false, k });
       const wc = below.get(sc.id) ? [dn(0), up(0), dn(1), dn(2), dn(3), up(1), up(2), up(3)] : [up(0), dn(0), up(1), up(2), up(3), dn(1), dn(2), dn(3)];
       const wBox = (c) => (c.up ? { x0: sx - dop.tick, x1: sx + sw + dop.tick, y0: c.y - fs * 0.95, y1: c.y + dop.tick } : { x0: sx - dop.tick, x1: sx + sw + dop.tick, y0: c.y - dop.tick, y1: c.y + fs * 1.0 });
@@ -3027,7 +3091,7 @@ function drawStage(pen, v) {
   const labelJobs = [];
   if (v.labels) {
     for (const sc of byArea) {
-      const comp = comps[sc.id]; const { sx, sy, sw, sh } = rects.get(sc.id);
+      const comp = comps[sc.id]; const { sx, sy, sw, sh, top } = rects.get(sc.id);
       const extra = [];
       if (comp.curve) extra.push(`${comp.curve.shape === 'concave' ? 'curved in' : 'curved out'} ${fmtNum(comp.curve.arc, 1)}°`);
       if (sc.yaw) extra.push(`yaw ${fmtNum(sc.yaw, 1)}°`);
@@ -3038,10 +3102,10 @@ function drawStage(pen, v) {
       const mw = pen.measure(meta, { size: metaSize });
       const lw = nw + fs * 0.5 + mw;
       const xs = [sx, sx + sw - lw, sx + sw / 2 - lw / 2];
-      const aboveYs = [sy - fs * 0.55, sy - fs * 2.55], belowYs = [sy + sh + fs * 1.25, sy + sh + fs * 3.35];
+      const aboveYs = [top - fs * 0.55, top - fs * 2.55], belowYs = [sy + sh + fs * 1.25, sy + sh + fs * 3.35];
       const cands = [];
       for (const y of (below.get(sc.id) ? [...belowYs, ...aboveYs] : [...aboveYs, ...belowYs])) for (const x of xs) cands.push({ x, y });
-      for (let k = 1; k <= 6; k++) for (const x of xs) cands.push({ x, y: sy - fs * 2.55 - k * fs * 1.45, lead: true });
+      for (let k = 1; k <= 6; k++) for (const x of xs) cands.push({ x, y: top - fs * 2.55 - k * fs * 1.45, lead: true });
       const boxOf = (c) => ({ x0: c.x - fs * 0.25, x1: c.x + lw + fs * 0.25, y0: c.y - nameSize * 0.95, y1: c.y + nameSize * 0.35 });
       const pick = choose(cands, boxOf, sc.id) || cands[0];
       keep(boxOf(pick));
@@ -3290,8 +3354,8 @@ const View3D = (() => {
 
   function themeColors(dark) {
     return dark
-      ? { bg: 0x0a1017, floor: 0x0e1822, minor: 0x18293a, major: 0x27415a, person: 0x8c9aa8, back: 0x1c232c, label: '#E3ECF4', labelBg: 'rgba(10,16,23,0.72)' }
-      : { bg: 0xe6ecf2, floor: 0xd9e1e9, minor: 0xc4cfda, major: 0xa7b6c5, person: 0x6f7d8b, back: 0x2a323c, label: '#14202C', labelBg: 'rgba(255,255,255,0.82)' };
+      ? { bg: 0x0a1017, floor: 0x0e1822, minor: 0x18293a, major: 0x27415a, person: 0x8c9aa8, back: 0x1c232c, support: 0x6b7787, label: '#E3ECF4', labelBg: 'rgba(10,16,23,0.72)' }
+      : { bg: 0xe6ecf2, floor: 0xd9e1e9, minor: 0xc4cfda, major: 0xa7b6c5, person: 0x6f7d8b, back: 0x2a323c, support: 0x7d8a97, label: '#14202C', labelBg: 'rgba(255,255,255,0.82)' };
   }
 
   function applyTheme(dark) {
@@ -3388,16 +3452,58 @@ const View3D = (() => {
       inst.instanceMatrix.needsUpdate = true;
       group.add(inst);
     }
+    addSupports(group, disposables, s, comp, facets, H, depth, colW, colors);
     const label = labelSprite(s.name, colors); disposables.push(label.material.map, label.material);
     label.position.set(0, H + 0.12, 0);
     group.add(label); group.userData.label = label;
     return { group, dispose: () => disposables.forEach((d) => d && d.dispose && d.dispose()) };
   }
 
+  // Mounting, schematic only: flying bars with chains and hoists on top, a ground-stack base with rear
+  // braces, or a frame of posts and rails behind the cabinets (posts down to the floor).
+  function addSupports(group, disposables, s, comp, facets, H, depth, colW, colors) {
+    const mount = s.mount || 'ground';
+    const mat = new THREE.MeshStandardMaterial({ color: colors.support, roughness: 0.65, metalness: 0.4 }); disposables.push(mat);
+    const q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, 'YXZ'), M = new THREE.Matrix4(), S = new THREE.Vector3();
+    const at = (f, lx, ly, lz) => new THREE.Vector3(lx, ly, lz).applyAxisAngle(Y_AXIS, f.yaw).add(new THREE.Vector3(f.x / 1000, 0, f.z / 1000));
+    const C = facets.length, W = comp.W / 1000;
+    // facets roughly every `step` metres, always both ends
+    const spread = (step) => {
+      if (C === 1) return [0];
+      const n = Math.max(2, Math.min(C, Math.round(W / step) + 1));
+      return [...new Set([...Array(n).keys()].map((i) => Math.round(i * (C - 1) / (n - 1))))];
+    };
+    const items = [];
+    if (mount === 'flown') {
+      for (const f of facets) items.push({ f, lx: 0, ly: H + 0.03, lz: -depth / 2, sx: colW, sy: 0.06, sz: 0.11 });          // flying bar
+      for (const i of spread(2)) {
+        items.push({ f: facets[i], lx: 0, ly: H + 0.66, lz: -depth / 2, sx: 0.025, sy: 1.2, sz: 0.025 });                     // chain
+        items.push({ f: facets[i], lx: 0, ly: H + 1.4, lz: -depth / 2, sx: 0.2, sy: 0.28, sz: 0.2 });                         // hoist
+      }
+    } else if (mount === 'ground') {
+      for (const f of facets) items.push({ f, lx: 0, ly: -0.025, lz: -0.29, sx: colW, sy: 0.05, sz: 0.62 });                  // base
+      const hTop = H * 0.75, d = Math.min(1.6, Math.max(0.6, H * 0.45)), L = Math.hypot(hTop, d);
+      for (const i of spread(2)) items.push({ f: facets[i], lx: 0, ly: hTop / 2, lz: -depth - d / 2, sx: 0.04, sy: L, sz: 0.04, rx: Math.atan2(d, hTop) });   // rear brace
+    } else {
+      const floor = -(num(s.y) || 0) / 1000, zb = -depth - 0.2, m = 0.12;
+      for (const i of spread(3)) items.push({ f: facets[i], lx: 0, ly: (floor + H + 0.1) / 2, lz: zb, sx: m, sy: H + 0.1 - floor, sz: m });   // post
+      for (const f of facets) for (const y of (H > 0.8 ? [0.25, H - 0.25] : [H / 2])) items.push({ f, lx: 0, ly: y, lz: zb, sx: colW, sy: m * 0.7, sz: m * 0.7 });   // rails
+    }
+    if (!items.length) return;
+    const geo = new THREE.BoxGeometry(1, 1, 1); disposables.push(geo);
+    const inst = new THREE.InstancedMesh(geo, mat, items.length);
+    items.forEach((it, k) => {
+      e.set(it.rx || 0, it.f.yaw, 0, 'YXZ'); q.setFromEuler(e); S.set(it.sx, it.sy, it.sz);
+      M.compose(at(it.f, it.lx, it.ly, it.lz), q, S); inst.setMatrixAt(k, M);
+    });
+    inst.instanceMatrix.needsUpdate = true;
+    group.add(inst);
+  }
+
   function contentKey(project, s, face) {
     const used = [s.panel, s.mix && s.mix.small, s.mix && s.mix.big].map((id) => { const p = getPanel(project, id); return [p.id, p.w, p.h, p.px, p.py, p.wMax, p.wAvg]; });
     const st = project.settings;
-    return JSON.stringify([s.name, s.color, s.sizeMode, s.panel, s.cols, s.rows, s.tw, s.th, s.fit, s.mix, s.shape, s.angle, s.holes, s.data, face, used,
+    return JSON.stringify([s.name, s.color, s.sizeMode, s.panel, s.cols, s.rows, s.tw, s.th, s.fit, s.mix, s.shape, s.angle, s.holes, s.data, s.mount, s.mount === 'back' ? s.y : 0, face, used,
       face === 'data' ? [st.portCapacity, st.portPrefix] : 0, face === 'power' ? [st.voltage, st.circuitAmps, st.loadFactor, st.powerFactor, st.powerBasis] : 0]);
   }
 
@@ -3739,7 +3845,11 @@ function screenSpecs(project, s, c) {
     ['Shape', c.curve ? `${c.curve.shape[0].toUpperCase() + c.curve.shape.slice(1)}, ${fmtNum(c.curve.angle, 2)}° per column, ${fmtNum(c.curve.arc, 1)}° total, radius ${fmtM(c.curve.rIn, 2)} m` : 'Flat'],
     ['Position', `Centre ${fmtM(s.x, 2)} m from CL, bottom ${fmtM(s.y, 2)} m above floor${s.z ? `, ${fmtM(s.z, 2)} m forward` : ''}${s.yaw ? `, yaw ${fmtNum(s.yaw, 1)}°` : ''}`],
     ['Weight', `${fmtKg(c.weight)}${typicalNote(c)}, cabinets only`],
-    ['Heaviest column', c.heaviestCol ? `${fmtKg(c.heaviestCol.kg)} (column ${colLetter(c.heaviestCol.col)}), cabinets only, without rigging` : 'no data'],
+    ['Mounting', MOUNTS[c.support.mount].long],
+    ['Load per metre', c.support.kgPerM === null ? 'no data' : `${fmtInt(c.support.kgPerM)} kg per metre ${{ flown: 'along the flying bars', ground: 'along the base', back: 'of width on the back construction' }[c.support.mount]}`],
+    ['Heaviest column', c.heaviestCol ? `${fmtKg(c.heaviestCol.kg)} (column ${colLetter(c.heaviestCol.col)})${c.support.mount === 'ground' ? `, tallest column ${c.support.tallest.cabinets} cabinet${c.support.tallest.cabinets === 1 ? '' : 's'} high` : ''}` : 'no data'],
+    ['Centre of gravity', c.support.cog === null ? 'no data' : `${fmtM(c.support.cog, 2)} m above the floor`],
+    ['Front area (wind)', `${fmtNum(c.support.frontArea, 2)} m²${c.curve ? `, ${fmtM(c.support.projW, 2)} m wide seen from the front` : ''}`],
     ['Power, max / typical', `${fmtW(c.wMax)} / ${fmtW(c.wAvg)}${typicalNote(c)}`],
     ['Current at max', amps === null ? 'no data' : `${fmtNum(amps, 1)} A at ${fmtInt(st.voltage)} V single-phase · ${fmtNum(amps3, 1)} A per phase on 3-phase (power factor ${fmtNum(pf, 2)})`],
     ['Data ports', `${c.ports.length} × ${fmtInt(st.portCapacity)} px${st.backup ? `, plus ${c.ports.length} backup` : ''}`],
@@ -3894,14 +4004,14 @@ async function buildPdfReport(project, comps, totals, opts) {
     const c = comps[s.id];
     const tag = `${idx + 1}/${screens.length}`;
     // A: elevation
-    const notes = ['Numbers show the build order: up the first column from bottom left, then down the next. Letters name columns, numbers name rows from the bottom.'];
+    const notes = [`Numbers show the build order for a ${MOUNTS[c.support.mount].label.toLowerCase()} screen: ${buildOrderText(c.support.mount)}. Letters name columns, numbers name rows from the bottom.`];
     if (c.holes) notes.push(`${c.holes} cabinet position${c.holes === 1 ? ' is' : 's are'} left empty (dashed).`);
     if (c.curve) notes.push(`Curved ${c.curve.shape}: ${fmtNum(c.curve.angle, 2)}° between columns, ${fmtNum(c.curve.arc, 1)}° in total, radius ${fmtM(c.curve.rIn, 2)} m to the front face, chord ${fmtM(c.curve.chord, 2)} m, depth ${fmtM(c.curve.depth, 2)} m. Radius is calculated; confirm with the curve brackets available.`);
     const noteLines = pdfWrap(pen, notes.join(' '), PAGE.w - 2 * PAGE.m, { size: 2.4 });
     // text under the drawing: one line per panel type, the summary line, then the notes; the drawing takes what is left
     const textH = Object.keys(c.byPanel).length * 5 + 7 + noteLines.length * 3.4;
     const elevH = Math.min(140, PAGE.bottom + 2 - PAGE.top - textH - 7);
-    pages.push({ title: `${s.name} — front elevation`, sub: `screen ${tag} · cabinet build order${c.curve ? ' · developed view' : ''}`, draw: () => {
+    pages.push({ title: `${s.name} — front elevation`, sub: `screen ${tag} · ${MOUNTS[c.support.mount].label.toLowerCase()} · cabinet build order${c.curve ? ' · developed view' : ''}`, draw: () => {
       drawPlan(pen, c, { x: PAGE.m, y: PAGE.top, w: PAGE.w - 2 * PAGE.m, h: elevH }, { mode: 'cabinets', dims: true, labels: true, pal: PRINT_PAL, fs: 3.1, screenColor: s.color, minText: 1.4, minStroke: 0.12, prefix: st.portPrefix });
       let y = PAGE.top + elevH + 7;
       for (const b of Object.values(c.byPanel)) {
@@ -3962,7 +4072,8 @@ async function buildPdfReport(project, comps, totals, opts) {
         let y = pdfKeyValues(pen, PAGE.m, PAGE.top + 8, lw, screenSpecs(project, s, c), { size: 2.6, lh: 5.0 });
         y += 3; pen.text('CABINETS', PAGE.m, y, { font: 'cond', size: 3, fill: PDF_INK3 }); y += 2.5;
         const bom = Object.values(c.byPanel).map((b) => ({ type: b.panel.name, qty: b.count, size: `${fmtNum(b.panel.w, 1)} × ${fmtNum(b.panel.h, 1)}`, res: `${b.panel.px} × ${b.panel.py}`, kg: b.panel.kg === null ? '—' : fmtNum(b.panel.kg * b.count, 0), w: b.panel.wMax === null ? '—' : fmtInt(b.panel.wMax * b.count) }));
-        pdfTable(pen, PAGE.m, y, [{ key: 'type', label: 'Type', w: 46 }, { key: 'qty', label: 'Qty', w: 12, align: 'right' }, { key: 'size', label: 'Size (mm)', w: 22, align: 'right' }, { key: 'res', label: 'Pixels', w: 18, align: 'right' }, { key: 'kg', label: 'kg', w: 13, align: 'right' }, { key: 'w', label: 'Max W', w: 17, align: 'right' }], bom, { rh: 5.0, size: 2.5 });
+        let yb = pdfTable(pen, PAGE.m, y, [{ key: 'type', label: 'Type', w: 46 }, { key: 'qty', label: 'Qty', w: 12, align: 'right' }, { key: 'size', label: 'Size (mm)', w: 22, align: 'right' }, { key: 'res', label: 'Pixels', w: 18, align: 'right' }, { key: 'kg', label: 'kg', w: 13, align: 'right' }, { key: 'w', label: 'Max W', w: 17, align: 'right' }], bom, { rh: 5.0, size: 2.5 }) + 4;
+        for (const ln of pdfWrap(pen, 'Weights, loads and the centre of gravity are for the cabinets only: flying bars, frames, cables and wind add to them. They are a starting point for the rigging or structural design, which a qualified person must do and check.', lw, { size: 2.3 })) { if (yb > PAGE.bottom) break; pen.text(ln, PAGE.m, yb, { size: 2.3, fill: PDF_INK3 }); yb += 3.2; }
         pen.text('POWER CIRCUITS', px, PAGE.top + 3, { font: 'cond', size: 3, fill: PDF_INK3 });
         if (!c.power) { pen.text('Add weight and power values to the panel to plan circuits.', px, PAGE.top + 10, { size: 2.7, fill: PDF_INK2 }); return; }
         drawPlan(pen, c, { x: px, y: PAGE.top + 5, w: pw, h: ph }, { mode: 'power', dims: false, labels: true, pal: PRINT_PAL, fs: 2.6, screenColor: s.color, minText: 1.3, minStroke: 0.1, prefix: st.portPrefix });
@@ -3989,7 +4100,7 @@ async function buildPdfReport(project, comps, totals, opts) {
     const size = 2.4, lh = 3.1, HEAD = 5.6;
     const rows = items.map((it) => {
       const cell = (txt, key, o = {}) => pdfWrap(pen, txt, pc.find((c) => c.key === key).w - 3.2, Object.assign({ size }, o));
-      const item = cell(it.item, 'item', { weight: 600 }), per = cell(it.parts.map((x) => `${x.name}: ${x.n}`).join('  ·  '), 'per'), note = cell(it.note, 'note');
+      const item = cell(it.item, 'item', { weight: 600 }), per = cell(it.parts.map((x) => packPart(it, x)).join('  ·  '), 'per'), note = cell(it.note, 'note');
       return { it, item, per, note, h: Math.max(1, item.length, per.length, note.length) * lh + 2.4 };
     });
     const chunks = []; let cur = [], yy = PAGE.top + 2 + HEAD;
@@ -4010,7 +4121,7 @@ async function buildPdfReport(project, comps, totals, opts) {
           for (const c of pc) {
             if (c.key === 'pk' || c.key === 'ld') pen.rect(x + c.w / 2 - 1.6, y + 1.1, 3.2, 3.2, { fill: '#FFFFFF', stroke: PDF_INK2, sw: 0.25, rx: 0.3 });
             else if (c.key === 'group') pen.text(r.it.group, x + 1.6, ty, { size, fill: PDF_INK3 });
-            else if (c.key === 'qty') pen.text(fmtInt(r.it.qty), x + c.w - 1.6, ty, { size, weight: 600, fill: PDF_INK, anchor: 'end' });
+            else if (c.key === 'qty') pen.text(packQty(r.it), x + c.w - 1.6, ty, { size, weight: 600, fill: PDF_INK, anchor: 'end' });
             else r[c.key].forEach((ln, k) => pen.text(ln, x + 1.6, ty + k * lh, { size, weight: c.key === 'item' ? 600 : 400, fill: c.key === 'note' ? PDF_INK3 : PDF_INK }));
             x += c.w;
           }
@@ -4312,6 +4423,11 @@ function renderCfg() {
       </div>
       <div class="readout" data-ro="data"></div>
       <div class="readout pro" data-ro="power"></div>
+    </div></div>
+  <div class="card"><div class="card-head"><h3><span class="step">5</span>Mounting</h3></div>
+    <div class="card-body">
+      <div class="seg full" data-seg="mount">${MOUNT_ORDER.map((k) => segBtn(k, MOUNTS[k].label, s.mount)).join('')}</div>
+      <div class="readout" data-ro="mount"></div>
     </div></div>`;
   refreshReadouts();
 }
@@ -4354,6 +4470,16 @@ const RO = {
       : '<div class="desc" style="color:var(--ink-3)">In the Cabinets plan, click a cabinet to leave its position empty.</div>';
   },
   warn(s, c) { return c.warnings.map((w) => `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${esc(w)}</span></div>`).join(''); },
+  mount(s, c) {
+    const k = c.support, m = k.mount;
+    const along = { flown: 'along the flying bars', ground: 'along the base', back: 'across the back construction' }[m];
+    const area = `front area ${fmtNum(k.frontArea, 2)} m²${c.curve ? ` (${fmtM(k.projW, 2)} m wide seen from the front)` : ''}`;
+    let t = c.weight === null
+      ? `Add a weight to the panel to see the loads · ${area}`
+      : `<b>${{ flown: 'Hanging weight', ground: 'Weight on the base', back: 'Weight on the back construction' }[m]} ${fmtKg(c.weight)}</b> · ${fmtInt(k.kgPerM)} kg per metre ${along} · heaviest column ${fmtKg(c.heaviestCol.kg)}${m === 'ground' ? ` (${k.tallest.cabinets} cabinet${k.tallest.cabinets === 1 ? '' : 's'} high)` : ''} · centre of gravity ${fmtM(k.cog, 2)} m above the floor · ${area}`;
+    t += `<br>Build order: ${buildOrderText(m)}.<br><span style="color:var(--ink-3)">Cabinets only: flying bars, frames, cables and wind add to these. Have the rigging or structure designed and checked by a qualified person.</span>`;
+    return t;
+  },
   data(s, c) {
     const st = S.project.settings; const busiest = c.ports.length ? Math.max(...c.ports.map((p) => p.load / p.cap)) : 0;
     return `<b>${c.ports.length} data port${c.ports.length === 1 ? '' : 's'}${st.backup ? ` + ${c.ports.length} backup` : ''}</b> at ${fmtInt(st.portCapacity)} px each · busiest ${Math.round(busiest * 100)}% · <button class="linkbtn" data-act="settings">Ports and controller</button>${S.plan ? `<br>${ctrlSummary(S.plan)}` : ''}`;
@@ -4407,7 +4533,7 @@ function legendHtml(mode, s, c) {
     return `<div class="sum"><b>${c.power.circuits.length} circuit${c.power.circuits.length === 1 ? '' : 's'}</b> of ${fmtInt(st.circuitAmps)} A at ${fmtInt(st.voltage)} V · ${fmtInt(c.power.circuitW)} W each at ${Math.round(st.loadFactor * 100)}% load and PF ${fmtNum(st.powerFactor, 2)} · sized on ${st.powerBasis === 'avg' ? 'typical' : 'maximum'} power</div>
       <div class="lg-grid">${c.power.circuits.map((k) => { const pct = k.load / k.cap; return `<div class="lg"><span class="dot" style="background:${k.color}"></span><span class="name">${k.label}</span><span class="bar"><i style="width:${Math.min(100, pct * 100).toFixed(1)}%;background:${k.color}"></i></span><span class="val">${k.count} cab · ${fmtInt(k.load)} W · ${fmtNum(k.amps, 1)} A</span></div>`; }).join('')}</div>`;
   }
-  return `<div class="sum">Numbers give the build order: up the first column from the bottom left, then down the next. <b>Click a cabinet</b> to leave its position empty; click again to fill it.</div>
+  return `<div class="sum">Numbers give the build order for a ${MOUNTS[s.mount].label.toLowerCase()} screen: ${buildOrderText(s.mount)}. <b>Click a cabinet</b> to leave its position empty; click again to fill it.</div>
     <div class="lg-grid">${Object.values(c.byPanel).map((b) => `<div class="lg"><span class="dot" style="background:${s.color}"></span><span class="name">${b.count}×</span><span class="val" style="grid-column:span 2;white-space:normal;font-family:var(--font-ui);font-size:12.5px">${esc(b.panel.name)} · ${fmtNum(b.panel.w, 1)} × ${fmtNum(b.panel.h, 1)} mm</span></div>`).join('')}</div>`;
 }
 function planPx(c, w, fs, dims, labels) {
@@ -5072,8 +5198,8 @@ function csvText(rows) {
   return '﻿' + rows.map((r) => r.map(cell).join(f.sep)).join('\r\n') + '\r\n';
 }
 function csvPackingList(project, comps, plan) {
-  const rows = [['Group', 'Item', 'Quantity', 'Per screen', 'Note', 'Packed', 'Loaded']];
-  for (const it of packingList(project, comps, plan)) rows.push([it.group, it.item, it.qty, it.parts.map((x) => `${x.name}: ${x.n}`).join(' / '), it.note, '', '']);
+  const rows = [['Group', 'Item', 'Quantity', 'Unit', 'Per screen', 'Note', 'Packed', 'Loaded']];
+  for (const it of packingList(project, comps, plan)) rows.push([it.group, it.item, it.unit === 'm' ? Math.round(it.qty * 100) / 100 : it.qty, it.unit === 'm' ? 'm' : 'pcs', it.parts.map((x) => packPart(it, x)).join(' / '), it.note, '', '']);
   return csvText(rows);
 }
 function csvCabinetList(project, comps) {

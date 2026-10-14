@@ -276,6 +276,11 @@ function renderCfg() {
       </div>
       <div class="readout" data-ro="data"></div>
       <div class="readout pro" data-ro="power"></div>
+    </div></div>
+  <div class="card"><div class="card-head"><h3><span class="step">5</span>Mounting</h3></div>
+    <div class="card-body">
+      <div class="seg full" data-seg="mount">${MOUNT_ORDER.map((k) => segBtn(k, MOUNTS[k].label, s.mount)).join('')}</div>
+      <div class="readout" data-ro="mount"></div>
     </div></div>`;
   refreshReadouts();
 }
@@ -318,6 +323,16 @@ const RO = {
       : '<div class="desc" style="color:var(--ink-3)">In the Cabinets plan, click a cabinet to leave its position empty.</div>';
   },
   warn(s, c) { return c.warnings.map((w) => `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${esc(w)}</span></div>`).join(''); },
+  mount(s, c) {
+    const k = c.support, m = k.mount;
+    const along = { flown: 'along the flying bars', ground: 'along the base', back: 'across the back construction' }[m];
+    const area = `front area ${fmtNum(k.frontArea, 2)} m²${c.curve ? ` (${fmtM(k.projW, 2)} m wide seen from the front)` : ''}`;
+    let t = c.weight === null
+      ? `Add a weight to the panel to see the loads · ${area}`
+      : `<b>${{ flown: 'Hanging weight', ground: 'Weight on the base', back: 'Weight on the back construction' }[m]} ${fmtKg(c.weight)}</b> · ${fmtInt(k.kgPerM)} kg per metre ${along} · heaviest column ${fmtKg(c.heaviestCol.kg)}${m === 'ground' ? ` (${k.tallest.cabinets} cabinet${k.tallest.cabinets === 1 ? '' : 's'} high)` : ''} · centre of gravity ${fmtM(k.cog, 2)} m above the floor · ${area}`;
+    t += `<br>Build order: ${buildOrderText(m)}.<br><span style="color:var(--ink-3)">Cabinets only: flying bars, frames, cables and wind add to these. Have the rigging or structure designed and checked by a qualified person.</span>`;
+    return t;
+  },
   data(s, c) {
     const st = S.project.settings; const busiest = c.ports.length ? Math.max(...c.ports.map((p) => p.load / p.cap)) : 0;
     return `<b>${c.ports.length} data port${c.ports.length === 1 ? '' : 's'}${st.backup ? ` + ${c.ports.length} backup` : ''}</b> at ${fmtInt(st.portCapacity)} px each · busiest ${Math.round(busiest * 100)}% · <button class="linkbtn" data-act="settings">Ports and controller</button>${S.plan ? `<br>${ctrlSummary(S.plan)}` : ''}`;
@@ -371,7 +386,7 @@ function legendHtml(mode, s, c) {
     return `<div class="sum"><b>${c.power.circuits.length} circuit${c.power.circuits.length === 1 ? '' : 's'}</b> of ${fmtInt(st.circuitAmps)} A at ${fmtInt(st.voltage)} V · ${fmtInt(c.power.circuitW)} W each at ${Math.round(st.loadFactor * 100)}% load and PF ${fmtNum(st.powerFactor, 2)} · sized on ${st.powerBasis === 'avg' ? 'typical' : 'maximum'} power</div>
       <div class="lg-grid">${c.power.circuits.map((k) => { const pct = k.load / k.cap; return `<div class="lg"><span class="dot" style="background:${k.color}"></span><span class="name">${k.label}</span><span class="bar"><i style="width:${Math.min(100, pct * 100).toFixed(1)}%;background:${k.color}"></i></span><span class="val">${k.count} cab · ${fmtInt(k.load)} W · ${fmtNum(k.amps, 1)} A</span></div>`; }).join('')}</div>`;
   }
-  return `<div class="sum">Numbers give the build order: up the first column from the bottom left, then down the next. <b>Click a cabinet</b> to leave its position empty; click again to fill it.</div>
+  return `<div class="sum">Numbers give the build order for a ${MOUNTS[s.mount].label.toLowerCase()} screen: ${buildOrderText(s.mount)}. <b>Click a cabinet</b> to leave its position empty; click again to fill it.</div>
     <div class="lg-grid">${Object.values(c.byPanel).map((b) => `<div class="lg"><span class="dot" style="background:${s.color}"></span><span class="name">${b.count}×</span><span class="val" style="grid-column:span 2;white-space:normal;font-family:var(--font-ui);font-size:12.5px">${esc(b.panel.name)} · ${fmtNum(b.panel.w, 1)} × ${fmtNum(b.panel.h, 1)} mm</span></div>`).join('')}</div>`;
 }
 function planPx(c, w, fs, dims, labels) {
@@ -1036,8 +1051,8 @@ function csvText(rows) {
   return '﻿' + rows.map((r) => r.map(cell).join(f.sep)).join('\r\n') + '\r\n';
 }
 function csvPackingList(project, comps, plan) {
-  const rows = [['Group', 'Item', 'Quantity', 'Per screen', 'Note', 'Packed', 'Loaded']];
-  for (const it of packingList(project, comps, plan)) rows.push([it.group, it.item, it.qty, it.parts.map((x) => `${x.name}: ${x.n}`).join(' / '), it.note, '', '']);
+  const rows = [['Group', 'Item', 'Quantity', 'Unit', 'Per screen', 'Note', 'Packed', 'Loaded']];
+  for (const it of packingList(project, comps, plan)) rows.push([it.group, it.item, it.unit === 'm' ? Math.round(it.qty * 100) / 100 : it.qty, it.unit === 'm' ? 'm' : 'pcs', it.parts.map((x) => packPart(it, x)).join(' / '), it.note, '', '']);
   return csvText(rows);
 }
 function csvCabinetList(project, comps) {

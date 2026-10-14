@@ -58,14 +58,30 @@ function fmtPitch(p) { return (Math.round(pitchOf(p) * 1000) / 1000).toFixed(3);
 
 /* ---------- screen kinds (presets for "Add screen") ---------- */
 const KINDS = {
-  main: { label: 'Main', panel: 'g50100-39', cols: 16, rows: 4 },
-  side: { label: 'Side', panel: 'g5050-39', cols: 4, rows: 6 },
-  totem: { label: 'Totem', panel: 'g50100-39', cols: 2, rows: 4 },
-  banner: { label: 'Banner / fascia', panel: 'g5050-39', cols: 20, rows: 1 },
-  dj: { label: 'DJ booth front', panel: 'g5050-39', cols: 6, rows: 2 },
-  arc: { label: 'Arc / cylinder', panel: 'g5050-39', cols: 16, rows: 4, shape: 'concave', angle: 7.5 },
-  free: { label: 'Free', panel: 'g5050-39', cols: 4, rows: 3 },
+  main: { label: 'Main', panel: 'g50100-39', cols: 16, rows: 4, mount: 'flown' },
+  side: { label: 'Side', panel: 'g5050-39', cols: 4, rows: 6, mount: 'flown' },
+  totem: { label: 'Totem', panel: 'g50100-39', cols: 2, rows: 4, mount: 'ground' },
+  banner: { label: 'Banner / fascia', panel: 'g5050-39', cols: 20, rows: 1, mount: 'flown' },
+  dj: { label: 'DJ booth front', panel: 'g5050-39', cols: 6, rows: 2, mount: 'ground' },
+  arc: { label: 'Arc / cylinder', panel: 'g5050-39', cols: 16, rows: 4, shape: 'concave', angle: 7.5, mount: 'ground' },
+  free: { label: 'Free', panel: 'g5050-39', cols: 4, rows: 3, mount: 'ground' },
 };
+
+/* ---------- how a screen is held up ----------
+   The mounting sets the build order: a flown screen is hung from the top row down (the top row goes on
+   the flying bars, the hoists lift, the next row goes underneath); a ground stack and a screen fixed to a
+   back construction are built from the bottom row up. */
+const MOUNTS = {
+  flown: { label: 'Flown', long: 'Flown (hung from flying bars)' },
+  ground: { label: 'Ground stack', long: 'Ground stack (standing on a base)' },
+  back: { label: 'Back construction', long: 'Back construction (fixed to a truss or scaffold frame)' },
+};
+const MOUNT_ORDER = ['flown', 'ground', 'back'];
+function buildOrderText(mount) {
+  return mount === 'flown'
+    ? 'top row first, left to right, then each row below (a flown screen is hung from the top down)'
+    : 'bottom row first, left to right, then each row above';
+}
 const KIND_ORDER = ['main', 'side', 'totem', 'banner', 'dj', 'arc', 'free'];
 
 /* ---------- NovaStar controllers (from NovaStar specifications; capacities at 8-bit) ----------
@@ -98,7 +114,7 @@ function defaultScreen(kind = 'free') {
   return {
     id: uid('s-'), name: k.label, kind, color: SCREEN_COLORS[0],
     x: 0, y: 0, z: 0, yaw: 0,
-    panel: k.panel, sizeMode: 'grid', cols: k.cols, rows: k.rows,
+    panel: k.panel, sizeMode: 'grid', cols: k.cols, rows: k.rows, mount: k.mount || 'ground',
     tw: 4, th: 2.5, fit: 'nearest',
     mix: { small: 'g5050-39', big: 'g50100-39', w: 4, h: 2.5, stock: 20 },
     shape: k.shape || 'flat', angle: k.angle || 5,
@@ -173,6 +189,8 @@ function normalizeProject(raw) {
     s.mix = Object.assign(defaultScreen().mix, s.mix || {});
     s.mix.w = clamp(num(s.mix.w, 4), 0.1, 200); s.mix.h = clamp(num(s.mix.h, 2.5), 0.1, 100); s.mix.stock = clamp(int(s.mix.stock, 0), 0, 100000);
     s.shape = ['flat', 'concave', 'convex'].includes(s.shape) ? s.shape : 'flat';
+    // projects saved before the mounting option: a screen standing on the floor is a ground stack, one higher up is flown
+    s.mount = MOUNTS[rs.mount] ? rs.mount : (s.y > 0 ? 'flown' : 'ground');
     s.angle = clamp(num(s.angle, 5), 0.5, 45);
     s.holes = Array.isArray(s.holes) ? s.holes.filter((k) => typeof k === 'string' && /^\d+,\d+$/.test(k)).slice(0, 20000) : [];
     s.data = Object.assign({ dir: 'h', start: 'bl', path: 'snake', split: 'lines' }, s.data || {});
@@ -348,8 +366,10 @@ function computeScreen(project, s) {
   }
   const active = cells.filter((c) => c.active);
 
-  // build order numbers: vertical serpentine from bottom-left (typical ground-stack build order)
-  { let n = 0; for (let c = 0; c < cols; c++) { const up = c % 2 === 0; for (let i = 0; i < R; i++) { const r = up ? i : R - 1 - i; const cell = grid[r][c]; if (cell.active) cell.build = ++n; } } }
+  // build order numbers, row by row and left to right: from the top row down for a flown screen,
+  // from the bottom row up for a ground stack or a back construction (see MOUNTS)
+  { let n = 0; const rowsInOrder = [...Array(R).keys()]; if (s.mount === 'flown') rowsInOrder.reverse();
+    for (const r of rowsInOrder) for (let c = 0; c < cols; c++) { const cell = grid[r][c]; if (cell.active) cell.build = ++n; } }
 
   // counts by panel type
   const byPanel = {};
@@ -417,6 +437,19 @@ function computeScreen(project, s) {
     curve = { shape: s.shape, angle: a, arc, closed, rIn, rOut, chord, depth };
   }
 
+  // key figures for whoever designs the rigging or structure (cabinets only: no bars, frames, cables or wind)
+  const colCount = new Array(cols).fill(0); for (const c of active) colCount[c.c]++;
+  let tallestIdx = 0; for (let i = 1; i < cols; i++) if (colCount[i] > colCount[tallestIdx]) tallestIdx = i;
+  const projW = curve ? (curve.arc <= 180 ? curve.chord : 2 * curve.rOut) : W;
+  const support = {
+    mount: MOUNTS[s.mount] ? s.mount : 'ground',
+    kgPerM: weight !== null ? weight / (W / 1000) : null,                              // along the bars, base or frame (developed width)
+    cog: weight ? num(s.y) + sum(active, (c) => c.panel.kg * (c.y + c.h / 2)) / weight : null,   // centre of gravity, mm above the floor
+    frontArea: projW * H / 1e6,                                                       // m², seen from the front
+    projW,
+    tallest: { col: tallestIdx, cabinets: colCount[tallestIdx] },
+  };
+
   if (info.target) {
     const dw = W - info.target.w, dh = H - info.target.h;
     info.target.dw = dw; info.target.dh = dh;
@@ -425,7 +458,7 @@ function computeScreen(project, s) {
   return {
     id: s.id, screen: s, cols, rows: R, rowPanels, rowY, W, H, resW, resH, cells, grid, active,
     count: active.length, holes: cells.length - active.length, byPanel, pixels, area, envelope,
-    weight, heaviestCol, wMax, wAvg, ratio, ports, power, curve, colW, warnings, info, lines,
+    weight, heaviestCol, wMax, wAvg, ratio, ports, power, curve, colW, warnings, info, lines, support,
   };
 }
 
@@ -546,6 +579,15 @@ function packingList(project, comps, plan) {
   add('Data', 'Data link cable, cabinet to next cabinet', per((c) => sum(dl.get(c.id), (x) => x.short)));
   const lengths = (f) => { const all = new Set(); for (const { s } of list) for (const x of f(s.id)) for (const L of x.long) all.add(L); return [...all].sort((a, b) => a - b); };
   for (const L of lengths((id) => dl.get(id))) add('Data', `Data link cable, at least ${L} m`, per((c) => sum(dl.get(c.id), (x) => x.long.filter((v) => v === L).length)), 'across an empty position, a Z return or a row change');
+  // rigging: lengths to cover, since the hardware itself depends on the cabinet system
+  const byMount = (m) => list.filter(({ s }) => (MOUNTS[s.mount] ? s.mount : 'ground') === m);
+  const metres = (group, item, sel, note, withHeight = false) => {
+    const parts = sel.map(({ s, c }) => ({ name: s.name, n: c.W / 1000, label: withHeight ? `${fmtNum(c.W / 1000, 2)} m wide, ${fmtNum(c.H / 1000, 2)} m high` : `${fmtNum(c.W / 1000, 2)} m` }));
+    if (parts.length) items.push({ group, item, qty: sum(parts, (x) => x.n), unit: 'm', parts, note });
+  };
+  metres('Rigging', 'Flying bars along the top edge', byMount('flown'), 'hanging points and hoists per the rigging plan');
+  metres('Rigging', 'Ground-stack base along the bottom edge', byMount('ground'), 'plus rear braces or outriggers as the cabinet system requires');
+  metres('Rigging', 'Back construction (truss or scaffold) behind the screen', byMount('back'), 'as designed by the structural engineer', true);
   // power
   if (list.length && list.every(({ c }) => c.power)) {
     add('Power', `Power feed cable, one per ${fmtInt(st.circuitAmps)} A circuit`, per((c) => c.power.circuits.length), 'length to suit the distribution');
@@ -555,6 +597,9 @@ function packingList(project, comps, plan) {
   }
   return items;
 }
+
+function packQty(it) { return it.unit === 'm' ? `${fmtNum(it.qty, 2)} m` : fmtInt(it.qty); }
+function packPart(it, x) { return `${x.name}: ${x.label || (it.unit === 'm' ? `${fmtNum(x.n, 2)} m` : fmtInt(x.n))}`; }
 
 /* ---------- 16:9 suggestions ---------- */
 function suggest169(p, curCols, curRows) {
@@ -615,5 +660,5 @@ function uniqueName(project, base) {
 if (typeof module !== 'undefined') {
   module.exports = { BUILTIN_PANELS, KINDS, CONTROLLERS, computeScreen, computeTotals, suggest169, exampleProject, blankProject, normalizeProject,
     ratioInfo, splitLines, orderLines, facetTransforms, colLetter, slug, fmtInt, fmtM, fmtSize, getPanel, defaultScreen, placeNewScreen, holesInGrid, defaultSettings,
-    planControllers, assignControllers, packingList, chainLinks };
+    planControllers, assignControllers, packingList, chainLinks, MOUNTS, MOUNT_ORDER, buildOrderText, packQty, packPart };
 }
