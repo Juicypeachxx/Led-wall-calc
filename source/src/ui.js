@@ -12,7 +12,49 @@ const S = {
   undo: [], redo: [], lastSnap: '', lastKey: '', lastTime: 0,
   pal: {}, dark: true, guides: [],
   saveTimer: 0, pristine: true, fresh: false, lastSetId: '', suggOpen: false,
+  libNote: '', libPrune: [],
 };
+
+/* ---------- your panels ----------
+   own: panels added here, by hand or from a spreadsheet; saved in this browser (and in the viewer's
+   account when there is one). site: panels.xlsx (or panels.csv) next to the planner, e.g. in its GitHub
+   repository, read each time the planner opens and kept for offline use. Both show in every panel list.
+   A project keeps its own copy of each panel it uses, so its project file works anywhere. */
+const cmpText = (a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base', numeric: true });
+const byBrandModel = (a, b) => cmpText(a.brand || '\uffff', b.brand || '\uffff') || cmpText(a.model || a.name, b.model || b.name);
+const Lib = {
+  own: [], site: null, subs: new Set(),
+  load() {
+    const seen = new Set();
+    this.own = Store.localLibrary().map((c) => { try { return normalizePanel(c); } catch (e) { return null; } }).filter((p) => p && !seen.has(p.id) && seen.add(p.id));
+    const site = Store.siteCache();
+    this.site = site ? Object.assign({}, site, { panels: site.panels.map(normalizePanel) }) : null;
+  },
+  all() { const ids = new Set(this.own.map((p) => p.id)); return [...this.own, ...((this.site && this.site.panels) || []).filter((p) => !ids.has(p.id))]; },
+  find(id) { return this.own.find((p) => p.id === id) || (this.site && this.site.panels.find((p) => p.id === id)) || null; },
+  isOwn(id) { return this.own.some((p) => p.id === id); },
+  isSite(id) { return !this.isOwn(id) && !!(this.site && this.site.panels.some((p) => p.id === id)); },
+  saveOwn() { this.own.sort(byBrandModel); Store.saveLibrary(this.own); this.emit(); },
+  upsert(p) { const i = this.own.findIndex((x) => x.id === p.id); if (i >= 0) this.own[i] = p; else this.own.push(p); this.saveOwn(); },
+  remove(id) { this.own = this.own.filter((x) => x.id !== id); this.saveOwn(); },
+  setSite(v) { this.site = v; Store.saveSiteCache(v); this.emit(); },
+  brands() { return [...new Set(this.all().map((p) => p.brand).filter(Boolean))].sort(cmpText); },
+  on(fn) { this.subs.add(fn); return () => this.subs.delete(fn); },
+  emit() { for (const f of [...this.subs]) { try { f(); } catch (e) { console.error(e); } } },
+};
+// a project keeps a copy of every panel its screens use; copies of list panels no screen uses are dropped
+function adoptPanels(p) {
+  const used = new Set();
+  for (const s of p.screens) { used.add(s.panel); if (s.mix) { used.add(s.mix.small); used.add(s.mix.big); } }
+  for (const id of used) { if (findPanel(p, id)) continue; const lp = Lib.find(id); if (lp) p.catalog.push(deepClone(lp)); }
+  p.catalog = p.catalog.filter((c) => used.has(c.id) || !Lib.find(c.id));
+}
+// cabinets of one panel across the whole project, for the stock check
+function projectUse(id) {
+  let n = 0;
+  for (const s of S.project.screens) { const c = S.comps[s.id]; if (c) for (const b of Object.values(c.byPanel)) if (b.panel.id === id) n += b.count; }
+  return n;
+}
 
 /* ---------- toasts ---------- */
 function toast(msg, action) {
@@ -68,6 +110,7 @@ function findScreen(id) { return S.project.screens.find((s) => s.id === id) || n
 
 function change(fn, { key = '', structural = false, history = true } = {}) {
   fn(S.project);
+  adoptPanels(S.project);
   S.project.updated = new Date().toISOString();
   if (S.project.example) delete S.project.example;
   S.pristine = false; S.fresh = false;
@@ -157,7 +200,10 @@ function fitStage() {
   S.view.fitted = true; S.view.touched = false;
 }
 function renderStage() {
-  const empty = $('#stage-empty'); if (empty) empty.hidden = S.project.screens.length > 0;
+  // no screens: the start card shows, and the stage grows to fit it
+  const none = S.project.screens.length === 0, empty = $('#stage-empty');
+  if (empty) empty.hidden = !none;
+  $('#stage-wrap').classList.toggle('is-empty', none);
   const svg = $('#stage-svg'); const { w, h } = stageSize(); if (w < 20 || h < 20) return;
   if (!S.view.fitted) fitStage();
   const pen = new SvgPen();
@@ -208,10 +254,16 @@ function syncPropsValues() {
 
 /* ----- configuration cards ----- */
 function segBtn(v, label, cur, cls = '') { return `<button data-v="${v}" aria-pressed="${cur === v}"${cls ? ` class="${cls}"` : ''}>${label}</button>`; }
+// your panels first, one group per brand; then panels only this project has; then the generic presets
 function panelOptions(selected) {
-  const opt = (p) => `<option value="${esc(p.id)}"${p.id === selected ? ' selected' : ''}>${esc(p.name)}</option>`;
-  const custom = S.project.catalog || [];
-  return `<optgroup label="Generic presets">${BUILTIN_PANELS.map(opt).join('')}</optgroup>${custom.length ? `<optgroup label="Your panels">${custom.map(opt).join('')}</optgroup>` : ''}`;
+  const proj = (S.project && S.project.catalog) || [];
+  const opt = (p) => `<option value="${esc(p.id)}"${p.id === selected ? ' selected' : ''}>${esc((proj.find((c) => c.id === p.id) || p).name)}</option>`;
+  const lib = Lib.all(), groups = new Map();
+  for (const p of [...lib].sort(byBrandModel)) { const b = p.brand || ''; if (!groups.has(b)) groups.set(b, []); groups.get(b).push(p); }
+  let html = [...groups].map(([b, list]) => `<optgroup label="${esc(b || 'Your panels')}">${list.map(opt).join('')}</optgroup>`).join('');
+  const ids = new Set(lib.map((p) => p.id)), only = proj.filter((p) => !ids.has(p.id));
+  if (only.length) html += `<optgroup label="This project only">${only.map(opt).join('')}</optgroup>`;
+  return html + `<optgroup label="Generic presets">${BUILTIN_PANELS.map(opt).join('')}</optgroup>`;
 }
 const CORNER_NAMES = { bl: 'bottom left', br: 'bottom right', tl: 'top left', tr: 'top right' };
 function cornerBtn(k, cur, dir) {
@@ -246,7 +298,7 @@ function renderCfg() {
   if (!s) { box.innerHTML = ''; return; }
   const d = s.data;
   box.innerHTML = `
-  <div class="card"><div class="card-head"><h3><span class="step">1</span>Panel</h3><div class="tools"><button class="btn sm" data-act="panel-new"><svg class="ico"><use href="#i-plus"/></svg>Custom panel</button></div></div>
+  <div class="card"><div class="card-head"><h3><span class="step">1</span>Panel</h3><div class="tools"><button class="btn sm" data-act="panels">Your panels</button><button class="btn sm" data-act="panel-new"><svg class="ico"><use href="#i-plus"/></svg>New panel</button></div></div>
     <div class="card-body">
       ${s.sizeMode === 'mix' ? '<div class="desc">Mixed mode uses the two panels chosen under Size.</div>' : `<select id="cf-panel" data-bind="panel" data-type="str" aria-label="Panel model">${panelOptions(s.panel)}</select>`}
       <div class="desc" data-ro="panel"></div>
@@ -298,11 +350,21 @@ function shortName(p) { return p.name.replace(/^Generic /, ''); }
 const RO = {
   panel(s) {
     if (s.sizeMode === 'mix') return '';
-    const p = getPanel(S.project, s.panel);
-    const tail = p.builtin
-      ? `<br><span style="color:var(--ink-3)">Generic preset with typical weight and power.</span> <button class="linkbtn" data-act="panel-copy">Copy as custom panel</button>`
-      : `<br><button class="linkbtn" data-act="panel-edit">Edit this panel</button>`;
-    return `<b>${fmtNum(p.w, 1)} × ${fmtNum(p.h, 1)} mm</b> · ${p.px} × ${p.py} px · pitch <b>${fmtPitch(p)} mm</b><br>${p.kg !== null ? fmtNum(p.kg, 1) + ' kg' : 'weight not set'} · ${p.wMax !== null ? fmtInt(p.wMax) + ' W max' : 'power not set'}${p.wAvg !== null ? ' · ' + fmtInt(p.wAvg) + ' W typical' : ''}${tail}`;
+    const p = getPanel(S.project, s.panel), lp = p.builtin ? null : Lib.find(p.id);
+    let t = `<b>${fmtNum(p.w, 1)} × ${fmtNum(p.h, 1)} mm</b> · ${p.px} × ${p.py} px · pitch <b>${fmtPitch(p)} mm</b><br>${p.kg !== null ? fmtNum(p.kg, 1) + ' kg' : 'weight not set'} · ${p.wMax !== null ? fmtInt(p.wMax) + ' W max' : 'power not set'}${p.wAvg !== null ? ' · ' + fmtInt(p.wAvg) + ' W typical' : ''}`;
+    if (p.builtin) return t + `<br><span class="mut">Generic preset with typical weight and power.</span> <button class="linkbtn" data-act="panel-copy">Save as your panel</button>`;
+    const own = Lib.isOwn(p.id), site = Lib.isSite(p.id);
+    const acts = [own || !lp ? '<button class="linkbtn" data-act="panel-edit">Edit</button>' : '', !lp ? '<button class="linkbtn" data-act="panel-keep">Add to your panels</button>' : ''].filter(Boolean);
+    t += `<br><span class="mut">${own ? 'In your panels' : site ? `From ${esc(Lib.site.file)}` : 'Only in this project'}</span>${acts.length ? ' · ' + acts.join(' · ') : ''}`;
+    if (lp && !samePanel(p, lp)) t += `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${own ? 'Your panels have' : `${esc(Lib.site.file)} has`} other values for this panel than this project. <button class="linkbtn" data-act="panel-update">Use the new values</button></span></div>`;
+    const stock = lp ? lp.stock : p.stock;
+    if (stock !== null && stock !== undefined) {
+      const used = projectUse(p.id);
+      t += used > stock
+        ? `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>This project needs ${fmtInt(used)} of this panel, ${fmtInt(used - stock)} more than the ${fmtInt(stock)} in stock.</span></div>`
+        : `<br>Stock <b>${fmtInt(stock)}</b> · this project uses ${fmtInt(used)}`;
+    }
+    return t;
   },
   curve(s, c) {
     if (!c.curve) return ''; const k = c.curve;
@@ -328,12 +390,13 @@ const RO = {
   warn(s, c) { return c.warnings.map((w) => `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${esc(w)}</span></div>`).join(''); },
   mount(s, c) {
     const k = c.support, m = k.mount;
-    const along = { flown: 'along the flying bars', ground: 'along the base', back: 'across the back construction' }[m];
+    const along = { flown: 'along the flying bars', ground: 'along the base beams' }[m];
     const area = `front area ${fmtNum(k.frontArea, 2)} m²${c.curve ? ` (${fmtM(k.projW, 2)} m wide seen from the front)` : ''}`;
     let t = c.weight === null
       ? `Add a weight to the panel to see the loads · ${area}`
-      : `<b>${{ flown: 'Hanging weight', ground: 'Weight on the base', back: 'Weight on the back construction' }[m]} ${fmtKg(c.weight)}</b> · ${fmtInt(k.kgPerM)} kg per metre ${along} · heaviest column ${fmtKg(c.heaviestCol.kg)}${m === 'ground' ? ` (${k.tallest.cabinets} cabinet${k.tallest.cabinets === 1 ? '' : 's'} high)` : ''} · centre of gravity ${fmtM(k.cog, 2)} m above the floor · ${area}`;
-    t += `<br>Build order: ${buildOrderText(m)}.<br><span style="color:var(--ink-3)">Cabinets only: flying bars, frames, cables and wind add to these. Have the rigging or structure designed and checked by a qualified person.</span>`;
+      : `<b>${{ flown: 'Hanging weight', ground: 'Weight on the base' }[m]} ${fmtKg(c.weight)}</b> · ${fmtInt(k.kgPerM)} kg per metre ${along} · heaviest column ${fmtKg(c.heaviestCol.kg)}${m === 'ground' ? ` (${k.tallest.cabinets} cabinet${k.tallest.cabinets === 1 ? '' : 's'} high)` : ''} · centre of gravity ${fmtM(k.cog, 2)} m above the floor · ${area}`;
+    if (m === 'ground') t += `<br>${c.cols} ground beam${c.cols === 1 ? '' : 's'} with adjustable feet, ${groundSupports(c.W).length} rear supports (posts on H-frame bases) at both ends and about every 2 m`;
+    t += `<br>Build order: ${buildOrderText(m)}.<br><span style="color:var(--ink-3)">Cabinets only: ${m === 'flown' ? 'flying bars, chains' : 'ground beams, supports'}, cables and wind add to these. Have the rigging or structure designed and checked by a qualified person.</span>`;
     return t;
   },
   data(s, c) {
@@ -342,7 +405,7 @@ const RO = {
   },
   power(s, c) {
     const st = S.project.settings;
-    if (!c.power) return 'Circuits need power values on the panel. Make a custom panel with your datasheet figures.';
+    if (!c.power) return 'Circuits need power values on the panel. Add your panel with its datasheet figures (New panel).';
     return `<b>${c.power.circuits.length} power circuit${c.power.circuits.length === 1 ? '' : 's'}</b> of ${fmtInt(st.circuitAmps)} A at ${fmtInt(st.voltage)} V, loaded to ${Math.round(st.loadFactor * 100)}% at power factor ${fmtNum(st.powerFactor, 2)} (${fmtInt(c.power.circuitW)} W each). Chains follow the data path.`;
   },
 };
@@ -385,7 +448,7 @@ function legendHtml(mode, s, c) {
       <div class="lg-grid${st.backup ? ' wide' : ''}">${c.ports.map((p) => { const pct = p.load / p.cap; const f = p.cells[0], l = p.cells[p.cells.length - 1]; return `<div class="lg"><span class="dot" style="background:${p.color}"></span><span class="name">${esc(p.label)}</span><span class="bar"><i style="width:${Math.min(100, pct * 100).toFixed(1)}%;background:${p.color}"></i></span><span class="val">${p.count} cab · in ${colLetter(f.c)}${f.r + 1}${st.backup ? ` · BK ${colLetter(l.c)}${l.r + 1}` : ''} · ${Math.round(pct * 100)}%</span></div>`; }).join('')}</div>`;
   }
   if (mode === 'power') {
-    if (!c.power) return '<div class="sum">Power circuits need weight and power values on the panel. Use <b>Custom panel</b> to enter your datasheet figures.</div>';
+    if (!c.power) return '<div class="sum">Power circuits need weight and power values on the panel. Use <b>New panel</b> to enter your datasheet figures.</div>';
     return `<div class="sum"><b>${c.power.circuits.length} circuit${c.power.circuits.length === 1 ? '' : 's'}</b> of ${fmtInt(st.circuitAmps)} A at ${fmtInt(st.voltage)} V · ${fmtInt(c.power.circuitW)} W each at ${Math.round(st.loadFactor * 100)}% load and PF ${fmtNum(st.powerFactor, 2)} · sized on ${st.powerBasis === 'avg' ? 'typical' : 'maximum'} power</div>
       <div class="lg-grid">${c.power.circuits.map((k) => { const pct = k.load / k.cap; return `<div class="lg"><span class="dot" style="background:${k.color}"></span><span class="name">${k.label}</span><span class="bar"><i style="width:${Math.min(100, pct * 100).toFixed(1)}%;background:${k.color}"></i></span><span class="val">${k.count} cab · ${fmtInt(k.load)} W · ${fmtNum(k.amps, 1)} A</span></div>`; }).join('')}</div>`;
   }
@@ -428,22 +491,144 @@ function setActive(id, select = true) {
   S.activeId = id; if (select) S.selection = new Set([id]);
   renderTabs(); renderProps(); renderCfg(); renderResults(); renderPlan(); renderStage();
 }
+// where a new screen goes, by its type: a DJ booth front 2 m forward on the floor, a banner above the
+// first screen, a side screen beside the others with its top level with the first screen's top
+function placeByKind(p, s, comp, kind) {
+  const first = p.screens.find((x) => x.id !== s.id), fc = first ? (S.comps[first.id] || computeScreen(p, first)) : null;
+  if (kind === 'dj') { s.x = 0; s.y = 0; s.z = 2000; }
+  else if (kind === 'banner' && first) { s.x = first.x; s.y = Math.round((first.y + fc.H + 300) / 50) * 50; }
+  else { placeNewScreen(p, s, comp); if (kind === 'side' && first) s.y = Math.max(0, Math.round((first.y + fc.H - comp.H) / 50) * 50); if (kind === 'main' && !first) s.y = 1000; }
+}
 function addScreen(kind) {
   const k = KINDS[kind] || KINDS.free;
   const s = defaultScreen(kind);
   s.color = nextColor(S.project);
   s.name = uniqueName(S.project, kind === 'main' ? 'Main screen' : k.label);
   const comp = computeScreen(S.project, s);
-  const first = S.project.screens[0], fc = first ? S.comps[first.id] : null;
   change((p) => {
-    p.screens.push(s);
-    if (kind === 'dj') { s.x = 0; s.y = 0; s.z = 2000; }
-    else if (kind === 'banner' && first) { s.x = first.x; s.y = Math.round((first.y + fc.H + 300) / 50) * 50; }
-    else { placeNewScreen(p, s, comp); if (kind === 'side' && first) s.y = Math.max(0, Math.round((first.y + fc.H - comp.H) / 50) * 50); if (kind === 'main' && !first) s.y = 1000; }
+    p.screens.push(s); placeByKind(p, s, comp, kind);
     S.activeId = s.id; S.selection = new Set([s.id]);
   }, { structural: true });
   S.view.fitted = false; renderStage();
   toast(`Added ${s.name}`, { label: 'Undo', run: undo });
+}
+
+/* ---------- a screen of your own size: the start card, and Add screen › Your own size ----------
+   The panel (your panels included), width × height in metres (nearest whole cabinets) or in cabinets,
+   and the mounting. The last choices are remembered for the next project. */
+// the project, plus a panel from your panels that it has no copy of yet (for working out a size first)
+function projectWith(id) {
+  const lp = Lib.find(id);
+  return lp && !findPanel(S.project, id) ? Object.assign({}, S.project, { catalog: [...S.project.catalog, lp] }) : S.project;
+}
+function sizeFormHtml(kinds) {
+  return `<div class="sf">
+    ${kinds ? `<label class="fld"><span>Type</span><select data-sf="kind">${KIND_ORDER.map((k) => `<option value="${k}">${KINDS[k].label}</option>`).join('')}</select></label>` : ''}
+    <label class="fld"><span>Panel</span><select data-sf="panel"></select></label>
+    <div class="sf-links"><button type="button" class="linkbtn" data-sf-act="new">New panel</button><button type="button" class="linkbtn" data-sf-act="lib">Your panels</button></div>
+    <div class="seg full" data-sf="unit" role="group" aria-label="Enter the size in"><button type="button" data-v="m">Metres</button><button type="button" data-v="cab">Cabinets</button></div>
+    <div class="row2">
+      <label class="fld"><span data-sf="wl">Width</span><div class="unit-in"><input type="number" data-sf="w" min="0" step="any"><i data-sf="wu">m</i></div></label>
+      <label class="fld"><span data-sf="hl">Height</span><div class="unit-in"><input type="number" data-sf="h" min="0" step="any"><i data-sf="hu">m</i></div></label>
+    </div>
+    <label class="fld"><span>Mounting</span><select data-sf="mount">${MOUNT_ORDER.map((k) => `<option value="${k}">${MOUNTS[k].label}</option>`).join('')}</select></label>
+    <div class="readout" data-sf="out" aria-live="polite"></div>
+  </div>`;
+}
+function bindSizeForm(root, { kinds = false } = {}) {
+  const q = (k) => root.querySelector(`[data-sf="${k}"]`);
+  const saved = PF.sf || {};
+  const known = (id) => !!(id && (Lib.find(id) || findPanel(S.project, id)));
+  const st = {
+    kind: 'main', panel: known(saved.panel) ? saved.panel : 'g50100-39', unit: saved.unit === 'cab' ? 'cab' : 'm',
+    w: saved.w > 0 ? saved.w : 8, h: saved.h > 0 ? saved.h : 4, cols: saved.cols > 0 ? saved.cols : 16, rows: saved.rows > 0 ? saved.rows : 4,
+    mount: MOUNTS[saved.mount] ? saved.mount : 'flown',
+  };
+  const fillPanels = () => { if (!known(st.panel)) st.panel = 'g50100-39'; const sel = q('panel'); sel.innerHTML = panelOptions(st.panel); sel.value = st.panel; };
+  const screen = () => {
+    const s = defaultScreen(st.kind); s.panel = st.panel; s.mount = st.mount;
+    if (st.unit === 'm') { s.sizeMode = 'meters'; s.tw = st.w; s.th = st.h; s.fit = 'nearest'; } else { s.sizeMode = 'grid'; s.cols = st.cols; s.rows = st.rows; }
+    return s;
+  };
+  const read = () => {
+    const w = parseFloat(String(q('w').value).replace(',', '.')), h = parseFloat(String(q('h').value).replace(',', '.'));
+    if (st.unit === 'm') { if (w > 0) st.w = clamp(w, 0.1, 200); if (h > 0) st.h = clamp(h, 0.1, 100); }
+    else { if (w >= 1) st.cols = clamp(Math.round(w), 1, 200); if (h >= 1) st.rows = clamp(Math.round(h), 1, 100); }
+    return st.unit === 'm' ? w > 0 && h > 0 : w >= 1 && h >= 1;
+  };
+  const show = () => {
+    const m = st.unit === 'm';
+    q('wl').textContent = m ? 'Width' : 'Columns'; q('hl').textContent = m ? 'Height' : 'Rows';
+    q('wu').textContent = m ? 'm' : ''; q('hu').textContent = m ? 'm' : '';
+    for (const [k, v] of [['w', m ? st.w : st.cols], ['h', m ? st.h : st.rows]]) { const el = q(k); el.step = m ? 'any' : '1'; el.inputMode = m ? 'decimal' : 'numeric'; if (document.activeElement !== el) el.value = String(Math.round(v * 1000) / 1000); }
+    root.querySelectorAll('[data-sf="unit"] button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === st.unit)));
+    q('mount').value = st.mount; if (kinds) q('kind').value = st.kind;
+  };
+  const preview = () => {
+    const out = q('out');
+    if (!read()) { out.innerHTML = st.unit === 'm' ? 'Enter the width and height in metres.' : 'Enter the number of columns and rows.'; return null; }
+    const c = computeScreen(projectWith(st.panel), screen()), lp = Lib.find(st.panel);
+    const nb = (x) => x.replace(/ /g, '\u00a0');   // keep "20.5 kW max" on one line
+    let t = `<b>${c.cols} × ${c.rows}</b> cabinets = <b>${fmtSize(c.W, c.H)}</b><br>${nb(fmtRes(c.resW, c.resH) + ' px')} · ${nb(fmtInt(c.count) + ' cabinets')}${c.weight !== null ? ` · ${nb(fmtKg(c.weight))}` : ''}${c.wMax !== null ? ` · ${nb(fmtW(c.wMax) + ' max')}` : ''}`;
+    if (st.unit === 'm' && (Math.abs(c.W - st.w * 1000) > 0.5 || Math.abs(c.H - st.h * 1000) > 0.5)) t += `<br><span class="mut">Nearest whole cabinets to ${fmtSize(st.w * 1000, st.h * 1000)}</span>`;
+    if (lp && lp.stock !== null && c.count > lp.stock) t += `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>That is ${fmtInt(c.count - lp.stock)} more than the ${fmtInt(lp.stock)} in stock.</span></div>`;
+    out.innerHTML = t;
+    return c;
+  };
+  root.addEventListener('input', (e) => { if (e.target.matches('[data-sf="w"], [data-sf="h"]')) preview(); });
+  root.addEventListener('change', (e) => {
+    const k = e.target.dataset && e.target.dataset.sf;
+    if (k === 'panel') st.panel = e.target.value;
+    if (k === 'mount') st.mount = e.target.value;
+    if (k === 'kind') { st.kind = e.target.value; st.mount = (KINDS[st.kind] || KINDS.free).mount || 'ground'; }
+    if (k === 'w' || k === 'h') read();
+    show(); preview();
+  });
+  root.addEventListener('click', (e) => {
+    const u = e.target.closest('[data-sf="unit"] button');
+    if (u && u.dataset.v !== st.unit) {
+      const c = preview();
+      if (c) { if (u.dataset.v === 'cab') { st.cols = c.cols; st.rows = c.rows; } else { st.w = Math.round(c.W) / 1000; st.h = Math.round(c.H) / 1000; } }
+      st.unit = u.dataset.v; show(); preview(); return;
+    }
+    const a = e.target.closest('[data-sf-act]'); if (!a) return;
+    if (a.dataset.sfAct === 'new') panelModal({ onSaved: (np) => { if (np) { st.panel = np.id; fillPanels(); preview(); } } });
+    if (a.dataset.sfAct === 'lib') panelsModal();
+  });
+  const off = Lib.on(() => { fillPanels(); preview(); });
+  fillPanels(); show(); preview();
+  return {
+    values() { if (!preview()) { toast(st.unit === 'm' ? 'Enter the width and height in metres.' : 'Enter the number of columns and rows.'); return null; } return Object.assign({}, st); },
+    refresh() { fillPanels(); preview(); }, off,
+  };
+}
+function addSizedScreen(v) {
+  const kind = v.kind || 'main';
+  const s = defaultScreen(kind);
+  s.panel = v.panel; s.mount = v.mount;
+  if (v.unit === 'm') { s.sizeMode = 'meters'; s.tw = v.w; s.th = v.h; s.fit = 'nearest'; } else { s.sizeMode = 'grid'; s.cols = v.cols; s.rows = v.rows; }
+  s.color = nextColor(S.project);
+  s.name = uniqueName(S.project, kind === 'main' ? 'Main screen' : (KINDS[kind] || KINDS.free).label);
+  const comp = computeScreen(projectWith(v.panel), s);
+  const first = S.project.screens[0];
+  change((p) => {
+    p.screens.push(s); placeByKind(p, s, comp, kind);
+    // a ground stack stands on the floor; a flown screen hangs level with the first flown screen, or 1 m up
+    if (s.mount === 'ground') s.y = 0;
+    else if (s.y === 0 && kind !== 'dj') s.y = first && first.mount === 'flown' ? first.y : 1000;
+    S.activeId = s.id; S.selection = new Set([s.id]);
+  }, { structural: true });
+  PF.sf = { panel: v.panel, unit: v.unit, w: v.w, h: v.h, cols: v.cols, rows: v.rows, mount: v.mount }; Prefs.save();
+  S.view.fitted = false; renderStage();
+  toast(`Added ${s.name}`, { label: 'Undo', run: undo });
+}
+function sizeModal() {
+  const m = openModal({ title: 'Add a screen', body: `<form class="sf-form" novalidate>${sizeFormHtml(true)}<button type="submit" hidden></button></form>`, foot: [
+    { label: 'Cancel', run: (close) => close() },
+    { label: 'Add screen', cls: 'primary', run: (close) => { const v = form.values(); if (v) { close(); addSizedScreen(v); } } },
+  ], onClose: () => form.off() });
+  const form = bindSizeForm(m.body, { kinds: true });
+  $('form', m.body).addEventListener('submit', (e) => { e.preventDefault(); const v = form.values(); if (v) { m.close(); addSizedScreen(v); } });
 }
 function mirrorName(n) {
   const sw = (m) => ({ left: 'right', right: 'left', Left: 'Right', Right: 'Left', LEFT: 'RIGHT', RIGHT: 'LEFT' }[m] || m);
@@ -654,7 +839,7 @@ function renderAddMenu() {
   $('#add-menu').innerHTML = KIND_ORDER.map((k) => {
     const d = KINDS[k], p = getPanel(S.project, d.panel);
     return `<button data-kind="${k}"><b>${d.label}</b><span>${d.cols} × ${d.rows} of ${esc(shortName(p))} · ${fmtSize(d.cols * p.w, d.rows * p.h)}${d.shape ? ' · curved' : ''}</span></button>`;
-  }).join('');
+  }).join('') + '<button data-custom><b>Your own size…</b><span>Any panel, including yours, at the width and height you need</span></button>';
 }
 function renderExportMenu() {
   const ok = Downloads.available(); const s = active(); const c = s ? S.comps[s.id] : null;
@@ -681,14 +866,18 @@ function bindAll() {
   // empty stage: one tap adds a first screen, or opens the example project
   $('#empty-kinds').innerHTML = KIND_ORDER.map((k) => { const d = KINDS[k], pn = getPanel(null, d.panel); return `<button class="chip" data-kind="${k}"><b>${d.label}</b><span>${d.cols} × ${d.rows} · ${fmtSize(d.cols * pn.w, d.rows * pn.h)}</span></button>`; }).join('');
   $('#empty-kinds').addEventListener('click', (e) => { const b = e.target.closest('[data-kind]'); if (b) addScreen(b.dataset.kind); });
+  $('#start-fields').innerHTML = sizeFormHtml(false);
+  const startForm = bindSizeForm($('#start-fields'));
+  $('#start-form').addEventListener('submit', (e) => { e.preventDefault(); const v = startForm.values(); if (v) addSizedScreen(v); });
   $('#btn-example').onclick = openExample;
+  $('#file-panels').addEventListener('change', async (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) await importPanels(f); });
   $('#btn-import').onclick = () => $('#file-import').click();
   $('#file-import').addEventListener('change', importFile);
   $('#btn-settings').onclick = settingsModal;
   $('#btn-export').onclick = (e) => { e.stopPropagation(); renderExportMenu(); toggleMenu(e.currentTarget, $('#export-menu')); };
   $('#export-menu').addEventListener('click', (e) => { const b = e.target.closest('[data-exp]'); if (!b || b.disabled) return; closeMenus(); runExport(b.dataset.exp); });
   $('#btn-add').onclick = (e) => { e.stopPropagation(); renderAddMenu(); toggleMenu(e.currentTarget, $('#add-menu')); };
-  $('#add-menu').addEventListener('click', (e) => { const b = e.target.closest('[data-kind]'); if (!b) return; closeMenus(); addScreen(b.dataset.kind); });
+  $('#add-menu').addEventListener('click', (e) => { const b = e.target.closest('[data-kind], [data-custom]'); if (!b) return; closeMenus(); if (b.dataset.kind) addScreen(b.dataset.kind); else sizeModal(); });
   document.addEventListener('click', (e) => { if (!e.target.closest('.menu-wrap')) closeMenus(); });
   $$('#mode-seg button').forEach((b) => b.onclick = () => { PF.mode = b.dataset.mode; Prefs.save(); applyMode(); renderAll(); });
   $('#btn-theme').onclick = () => { PF.theme = S.dark ? 'light' : 'dark'; Prefs.save(); applyTheme(); View3D.invalidate(); renderAll(); };
@@ -735,9 +924,12 @@ function bindAll() {
     if (sg) { const [cc, rr] = sg.dataset.sugg.split('x').map(Number); change(() => { s.cols = cc; s.rows = rr; s.holes = []; }, { structural: true }); toast(`Set to ${cc} × ${rr}`, { label: 'Undo', run: undo }); return; }
     const act = e.target.closest('[data-act]'); if (!act) return;
     const a = act.dataset.act;
-    if (a === 'panel-new') panelModal(null, null);
-    if (a === 'panel-copy') panelModal(null, getPanel(S.project, s.panel));
-    if (a === 'panel-edit') panelModal(getPanel(S.project, s.panel), null);
+    if (a === 'panels') panelsModal();
+    if (a === 'panel-new') panelModal({ use: true });
+    if (a === 'panel-copy') panelModal({ template: getPanel(S.project, s.panel), use: true });
+    if (a === 'panel-edit') { const p = getPanel(S.project, s.panel); if (Lib.isOwn(p.id)) panelModal({ existing: Lib.find(p.id) }); else panelModal({ existing: p, projectOnly: true }); }
+    if (a === 'panel-keep') { const p = getPanel(S.project, s.panel); Lib.upsert(normalizePanel(p)); toast(`Added ${p.name} to your panels`); }
+    if (a === 'panel-update') { const lp = Lib.find(s.panel); if (lp) { change((pp) => { pp.catalog = pp.catalog.map((c) => (c.id === lp.id ? deepClone(lp) : c)); }, { structural: true }); toast(`Updated ${lp.name} in this project`, { label: 'Undo', run: undo }); } }
     if (a === 'holes-clear') change(() => { s.holes = []; }, { structural: false });
     if (a === 'settings') settingsModal();
   });
@@ -787,7 +979,8 @@ function openModal({ title, body, foot, wide, onClose }) {
   if (typeof body === 'string') bodyEl.innerHTML = body; else if (body) bodyEl.appendChild(body);
   const prev = document.activeElement;
   const close = () => { back.remove(); document.removeEventListener('keydown', onKey, true); if (onClose) onClose(); if (prev && prev.focus) prev.focus(); };
-  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  // Escape closes the top dialog only (a panel dialog can open over the panel list)
+  const onKey = (e) => { if (e.key === 'Escape' && $('#modal-root').lastElementChild === back) { e.stopPropagation(); close(); } };
   if (foot) { const f = back.querySelector('.modal-foot'); for (const b of foot) { if (!b) continue; const btn = document.createElement('button'); btn.className = 'btn ' + (b.cls || ''); btn.textContent = b.label; if (b.id) btn.id = b.id; if (b.disabled) btn.disabled = true; btn.onclick = () => b.run(close, btn); f.appendChild(btn); } }
   back.addEventListener('pointerdown', (e) => { if (e.target === back) close(); });
   back.querySelector('[data-close]').onclick = close;
@@ -853,6 +1046,11 @@ async function duplicateProject() {
 async function importFile(e) {
   const f = e.target.files && e.target.files[0]; e.target.value = '';
   if (!f) return;
+  // a spreadsheet is a panel list, not a project
+  const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
+  if (/\.(xlsx|xls|csv|tsv|txt)$/i.test(f.name) || (head[0] === 0x50 && head[1] === 0x4B) || (head[0] === 0xD0 && head[1] === 0xCF)) {
+    panelsModal(); await importPanels(f); return;
+  }
   try {
     const raw = JSON.parse(await f.text());
     const p = normalizeProject(raw);
@@ -931,53 +1129,219 @@ function settingsModal() {
   m.body.addEventListener('change', (e) => { if (e.target.dataset.sb) apply(e.target, true); });
 }
 
-function panelModal(existing, template) {
+// a panel of your own: new, from a template, or editing one (in your panels, or one only this project has)
+function panelModal({ existing = null, template = null, use = false, onSaved = null, projectOnly = false } = {}) {
   const base = existing || template;
-  const p = base ? Object.assign({}, base) : { name: 'My panel', w: 500, h: 500, px: 128, py: 128, kg: 8.5, wMax: 180, wAvg: 60 };
-  if (!existing && template) p.name = `${template.name.replace(/^Generic /, '')} (my copy)`;
-  const used = existing ? S.project.screens.filter((s) => s.panel === existing.id || (s.sizeMode === 'mix' && (s.mix.small === existing.id || s.mix.big === existing.id))).length : 0;
-  const f = (k, label, step, unit, t = 'num') => `<label class="fld"><span>${label}</span><div class="unit-in"><input type="number" data-pk="${k}" data-t="${t}" step="${step}" min="0" value="${p[k] === null || p[k] === undefined ? '' : p[k]}"><i>${unit}</i></div></label>`;
+  const p = base ? Object.assign({}, base) : { brand: '', model: '', w: 500, h: 500, px: 128, py: 128, kg: 8.5, wMax: 180, wAvg: 60, stock: null };
+  if (!existing && template) { p.brand = template.builtin ? '' : template.brand; p.model = template.builtin ? template.name.replace(/^Generic /, '') : template.model; p.stock = null; }
+  const usedBy = existing && projectOnly ? S.project.screens.filter((s) => s.panel === existing.id || (s.sizeMode === 'mix' && (s.mix.small === existing.id || s.mix.big === existing.id))).length : 0;
+  const f = (k, label, step, unit, t = 'num') => `<label class="fld"><span>${label}</span><div class="unit-in"><input type="number" data-pk="${k}" data-t="${t}" step="${step}" min="0" inputmode="decimal" value="${p[k] === null || p[k] === undefined ? '' : p[k]}"><i>${unit}</i></div></label>`;
   const body = `
-    <label class="fld"><span>Name</span><input type="text" data-pk="name" value="${esc(p.name)}" maxlength="80"></label>
+    <div class="mgrid two">
+      <label class="fld"><span>Brand</span><input type="text" data-pk="brand" value="${esc(p.brand || '')}" maxlength="40" list="pk-brands" placeholder="Manufacturer" autocomplete="off"></label>
+      <label class="fld"><span>Model</span><input type="text" data-pk="model" value="${esc(p.model || p.name || '')}" maxlength="80" autocomplete="off"></label>
+    </div><datalist id="pk-brands">${Lib.brands().map((b) => `<option value="${esc(b)}"></option>`).join('')}</datalist>
     <div class="msec"><h4>Cabinet</h4><div class="mgrid">${f('w', 'Width', 0.5, 'mm')}${f('h', 'Height', 0.5, 'mm')}${f('px', 'Pixels across', 1, 'px', 'int')}${f('py', 'Pixels down', 1, 'px', 'int')}</div></div>
     <div class="msec"><h4>Weight and power (from the datasheet)</h4><div class="mgrid">${f('kg', 'Weight', 0.1, 'kg')}${f('wMax', 'Max power', 1, 'W')}${f('wAvg', 'Typical power', 1, 'W')}</div>
     <div class="desc">Leave a value empty if you do not know it; totals that need it will show as no data.</div></div>
-    <div class="readout" id="pk-out"></div>`;
-  const m = openModal({ title: existing ? 'Edit panel' : 'New custom panel', body, foot: [
-    existing ? { label: used ? `Used by ${used} screen${used === 1 ? '' : 's'}` : 'Delete panel', cls: 'danger', disabled: !!used, run: (close, btn) => {
+    ${projectOnly ? '' : `<div class="msec"><h4>Stock</h4><div class="mgrid">${f('stock', 'Cabinets you have', 1, 'pcs', 'int')}</div><div class="desc">Optional. The planner warns when a project needs more than this.</div></div>`}
+    <div class="readout" id="pk-out"></div>
+    ${existing && !projectOnly ? '<div class="desc">Changes apply to your panels and to this project. Other saved projects keep the values they were planned with until you choose Use the new values there.</div>' : ''}`;
+  const s0 = active();
+  const m = openModal({ title: existing ? 'Edit panel' : 'New panel', body, foot: [
+    existing && !projectOnly ? { label: 'Remove from your panels', cls: 'danger', run: (close, btn) => {
+      if (!btn.classList.contains('armed')) { btn.classList.add('armed'); btn.textContent = 'Confirm remove'; return; }
+      const was = Lib.find(existing.id); Lib.remove(existing.id); close();
+      toast(`Removed ${existing.name} from your panels`, { label: 'Undo', run: () => { if (was) Lib.upsert(was); } });
+      if (onSaved) onSaved(null);
+    } } : null,
+    existing && projectOnly ? { label: usedBy ? `Used by ${usedBy} screen${usedBy === 1 ? '' : 's'}` : 'Delete panel', cls: 'danger', disabled: !!usedBy, run: (close, btn) => {
       if (!btn.classList.contains('armed')) { btn.classList.add('armed'); btn.textContent = 'Confirm delete'; return; }
       change((pp) => { pp.catalog = pp.catalog.filter((c) => c.id !== existing.id); }, { structural: true }); close(); toast('Panel deleted', { label: 'Undo', run: undo });
     } } : null,
     { label: 'Cancel', run: (close) => close() },
-    { label: existing ? 'Save panel' : 'Add and use', cls: 'primary', run: (close) => {
-      const vals = read();
-      if (!vals.name.trim()) { toast('Give the panel a name.'); return; }
-      if (!(vals.w > 0 && vals.h > 0 && vals.px > 0 && vals.py > 0)) { toast('Width, height and pixel counts must be above zero.'); return; }
-      const np = normalizePanel(Object.assign({}, vals, { id: existing ? existing.id : uid('c-') }));
+    { label: existing ? 'Save panel' : use && s0 && s0.sizeMode !== 'mix' ? 'Add and use' : 'Add panel', cls: 'primary', run: (close) => {
+      const v = read();
+      if (!v.model.trim()) { toast('Give the panel a model name.'); return; }
+      if (!(v.w > 0 && v.h > 0 && v.px > 0 && v.py > 0)) { toast('Width, height and pixel counts must be above zero.'); return; }
+      if (existing) {
+        const np = normalizePanel(Object.assign({}, v, { id: existing.id }));
+        if (!projectOnly) Lib.upsert(np);
+        const inProject = S.project.catalog.some((c) => c.id === np.id);
+        if (inProject) change((pp) => { pp.catalog = pp.catalog.map((c) => (c.id === np.id ? deepClone(np) : c)); }, { structural: true });
+        close(); toast(`Saved ${np.name}`); if (onSaved) onSaved(np); return;
+      }
+      const id = panelIdFor(v.brand, v.model);
+      if (Lib.isOwn(id)) { toast(`You already have ${panelName(v.brand, v.model)}. Edit that one, or use another model name.`); return; }
+      const np = normalizePanel(Object.assign({}, v, { id }));
+      Lib.upsert(np);
       const s = active();
-      change((pp) => {
-        if (existing) pp.catalog = pp.catalog.map((c) => (c.id === existing.id ? np : c));
-        else { pp.catalog.push(np); if (s && s.sizeMode !== 'mix') s.panel = np.id; }
-      }, { structural: true });
-      close(); toast(existing ? 'Panel saved' : `Added ${np.name}`);
+      if (use && s && s.sizeMode !== 'mix') change(() => { s.panel = np.id; }, { structural: true });
+      close(); toast(`Added ${np.name} to your panels`); if (onSaved) onSaved(np);
     } },
   ] });
   const read = () => {
     const o = {};
     $$('[data-pk]', m.body).forEach((el) => {
       const k = el.dataset.pk;
-      if (k === 'name') { o.name = el.value; return; }
+      if (k === 'brand' || k === 'model') { o[k] = el.value.replace(/\s+/g, ' ').trim(); return; }
       const n = parseFloat(String(el.value).replace(',', '.'));
-      o[k] = Number.isFinite(n) ? (el.dataset.t === 'int' ? Math.round(n) : n) : (['kg', 'wMax', 'wAvg'].includes(k) ? null : 0);
+      o[k] = Number.isFinite(n) ? (el.dataset.t === 'int' ? Math.round(n) : n) : (['kg', 'wMax', 'wAvg', 'stock'].includes(k) ? null : 0);
     });
+    if (projectOnly && existing) o.stock = existing.stock ?? null;
     return o;
   };
   const out = () => {
     const v = read(); const el = $('#pk-out', m.body);
-    if (v.w > 0 && v.px > 0 && v.h > 0 && v.py > 0) el.innerHTML = `Pitch <b>${(v.w / v.px).toFixed(3)} mm</b> across, <b>${(v.h / v.py).toFixed(3)} mm</b> down · ${fmtInt(v.px * v.py)} px per cabinet · ${fmtNum((v.px * v.py) / (v.w * v.h / 1e6) / 1000, 1)}k px/m²`;
+    const name = panelName(v.brand, v.model);
+    if (v.w > 0 && v.px > 0 && v.h > 0 && v.py > 0) el.innerHTML = `${name ? `<b>${esc(name)}</b> · ` : ''}pitch <b>${(v.w / v.px).toFixed(3)} mm</b> across, <b>${(v.h / v.py).toFixed(3)} mm</b> down · ${fmtInt(v.px * v.py)} px per cabinet · ${fmtNum((v.px * v.py) / (v.w * v.h / 1e6) / 1000, 1)}k px/m²`;
     else el.textContent = 'Enter the cabinet size and pixel counts.';
   };
   m.body.addEventListener('input', out); out();
+}
+
+/* ---------- the "Your panels" dialog: your list, the site's panels.xlsx, import and export ---------- */
+function specLine(p) {
+  return `${fmtNum(p.w, 1)} × ${fmtNum(p.h, 1)} mm · ${p.px} × ${p.py} px · P${fmtPitch(p)}${p.kg !== null ? ` · ${fmtNum(p.kg, 1)} kg` : ''}${p.wMax !== null ? ` · ${fmtInt(p.wMax)} W` : ''}${p.stock !== null && p.stock !== undefined ? ` · stock ${fmtInt(p.stock)}` : ''}`;
+}
+function skippedHtml(list) {
+  if (!list || !list.length) return '';
+  return `<details class="more"><summary>${list.length} row${list.length === 1 ? '' : 's'} skipped</summary><div class="desc">${list.slice(0, 60).map((x) => `Row ${x.row}${x.name ? ` (${esc(x.name)})` : ''}: ${esc(x.reason)}`).join('<br>')}${list.length > 60 ? `<br>and ${list.length - 60} more` : ''}</div></details>`;
+}
+function panelListHtml(list, editable) {
+  if (!list.length) return '';
+  const groups = new Map();
+  for (const p of [...list].sort(byBrandModel)) { const b = p.brand || ''; if (!groups.has(b)) groups.set(b, []); groups.get(b).push(p); }
+  return `<div class="plist">${[...groups].map(([b, ps]) => `<div class="lib-brand">${esc(b || 'No brand')}</div>${ps.map((p) => `<div class="prow" data-pid="${esc(p.id)}"><div><div class="t">${esc(b ? p.model : p.name)}</div><div class="m mono">${specLine(p)}</div></div>${editable ? '<div class="b"><button class="btn sm" data-lib="edit">Edit</button><button class="btn sm danger" data-lib="del">Delete</button></div>' : ''}</div>`).join('')}`).join('')}</div>`;
+}
+function panelsModal() {
+  const m = openModal({ title: 'Your panels', body: '<div class="lib" id="lib"></div>', foot: [
+    { label: 'Export', run: exportPanels },
+    { label: 'Import Excel or CSV', run: () => $('#file-panels').click() },
+    { label: 'New panel', cls: 'primary', run: () => panelModal() },
+  ], onClose: () => { off(); S.libNote = ''; } });
+  const render = () => {
+    const box = $('#lib', m.body); if (!box) return;
+    const mode = Store.mode();
+    const where = mode === 'cloud' ? 'in your account, so they follow you to every device where you open this planner' : mode === 'local' ? 'in this browser' : 'only until you close the page, because this browser is blocking storage, so use Export to keep them';
+    const out = [`<div class="desc">Your panels show in every panel list, grouped by brand, in every project. Panels you add here are kept ${where}. A project keeps a copy of each panel it uses, so its project file works anywhere.</div>`];
+    if (S.libNote) out.push(`<div class="readout">${S.libNote}</div>`);
+    const site = Lib.site;
+    if (site) {
+      out.push(`<div class="lib-sec"><div class="lib-head"><h4>${esc(site.file)} on this site</h4><button class="btn sm" data-lib="reload">Read again</button></div>
+        <div class="desc">${site.error ? `<span class="warn">Could not read the file: ${esc(site.error)}</span><br>` : ''}${fmtInt(site.panels.length)} panel${site.panels.length === 1 ? '' : 's'}${site.sheet ? ` from the sheet “${esc(site.sheet)}”` : ''}, read ${relTime(site.loaded) || 'earlier'}. To change them, edit the file and upload it again.</div>
+        ${skippedHtml(site.skipped)}${panelListHtml(site.panels.filter((x) => !Lib.isOwn(x.id)), false)}</div>`);
+    } else if (/(^|\.)github\.io$/i.test(location.hostname)) {
+      out.push(`<div class="lib-sec"><h4>Panel list for everyone</h4><div class="desc">Upload an Excel file named <b>panels.xlsx</b> to this planner's GitHub repository, next to index.html. The planner reads it every time it opens, on every device. <button class="linkbtn" data-lib="reload">Check again</button></div></div>`);
+    }
+    out.push(`<div class="lib-sec"><h4>Added ${mode === 'cloud' ? 'to your account' : mode === 'local' ? 'in this browser' : 'here'}</h4>${Lib.own.length ? panelListHtml(Lib.own, true) : '<div class="empty">None yet. Use New panel, or Import an Excel or CSV file with one row per panel.</div>'}</div>`);
+    const tpl = /(^|\.)github\.io$/i.test(location.hostname) ? 'panels-template.xlsx' : 'https://juicypeachxx.github.io/Led-wall-calc/panels-template.xlsx';
+    out.push(`<div class="desc">Spreadsheet columns: Brand, Model, Width (mm), Height (mm), Pixels across, Pixels down, and if you have them Weight (kg), Max power (W), Typical power (W) and Stock. Pixel pitch can stand in for the pixel counts. <a class="linkbtn" href="${tpl}" download target="_blank" rel="noopener">Download the Excel template</a>; Export gives a CSV file with the same columns.</div>`);
+    box.innerHTML = out.join('');
+  };
+  const off = Lib.on(render);
+  m.body.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-lib]'); if (!b) return;
+    const a = b.dataset.lib, row = b.closest('[data-pid]'), p = row ? Lib.find(row.dataset.pid) : null;
+    if (a === 'edit' && p) panelModal({ existing: p });
+    if (a === 'del' && p) {
+      if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = 'Confirm delete'; setTimeout(() => { if (b.isConnected) { b.classList.remove('armed'); b.textContent = 'Delete'; } }, 4000); return; }
+      Lib.remove(p.id); toast(`Removed ${p.name} from your panels`, { label: 'Undo', run: () => Lib.upsert(p) });
+    }
+    if (a === 'reload') { b.disabled = true; await loadSitePanels({ announce: true }); render(); }
+    if (a === 'prune') {
+      const gone = Lib.own.filter((x) => S.libPrune.includes(x.id)); S.libPrune = [];
+      Lib.own = Lib.own.filter((x) => !gone.some((g) => g.id === x.id)); S.libNote = ''; Lib.saveOwn();
+      toast(`Removed ${gone.length} panel${gone.length === 1 ? '' : 's'}`, { label: 'Undo', run: () => { Lib.own.push(...gone); Lib.saveOwn(); } });
+    }
+  });
+  render();
+}
+// a spreadsheet with one row per panel -> your panels (matched by brand and model, so importing again updates them)
+async function importPanels(file) {
+  let r;
+  try { r = await Sheets.readPanels(file, file.name); }
+  catch (e) { S.libNote = `<span class="warn"><b>${esc(file.name)}</b>: ${esc(e.message || 'could not be read')}</span>`; Lib.emit(); toast(`${file.name} could not be read`); return; }
+  if (!r.header) {
+    S.libNote = `<span class="warn"><b>${esc(file.name)}</b>: no column names found.</span> The first rows need names such as Brand, Model, Width (mm), Height (mm), Pixels across and Pixels down.`;
+    Lib.emit(); toast(`No panel list found in ${file.name}`); return;
+  }
+  let added = 0, updated = 0, same = 0; const ids = new Set();
+  for (const np of r.panels) {
+    const key = panelKey(np.brand, np.model);
+    const ex = Lib.own.find((x) => x.id === np.id) || Lib.own.find((x) => panelKey(x.brand, x.model) === key);
+    if (ex) {
+      // a column the file does not have keeps the value you had; an empty cell in a column it has clears it
+      const keep = {}; for (const k of ['kg', 'wMax', 'wAvg', 'stock']) if (!r.columns.includes(k)) keep[k] = ex[k] ?? null;
+      const merged = normalizePanel(Object.assign({}, np, keep, { id: ex.id })); ids.add(ex.id);
+      if (samePanel(ex, merged) && (ex.stock ?? null) === (merged.stock ?? null)) same++; else { Object.assign(ex, merged); updated++; }
+    } else { Lib.own.push(np); ids.add(np.id); added++; }
+  }
+  const extra = Lib.own.filter((x) => !ids.has(x.id));
+  S.libPrune = extra.map((x) => x.id);
+  S.libNote = `<b>${esc(file.name)}</b>${r.sheet ? `, sheet “${esc(r.sheet)}”` : ''}: ${added} added, ${updated} updated, ${same} unchanged.${skippedHtml(r.skipped)}`
+    + (extra.length ? `<br>${extra.length} of the panels you had here ${extra.length === 1 ? 'is' : 'are'} not in this file. <button class="linkbtn" data-lib="prune">Remove ${extra.length === 1 ? 'it' : 'them'}</button>` : '');
+  if (added || updated) Lib.saveOwn(); else Lib.emit();
+  toast(`Read ${r.panels.length} panel${r.panels.length === 1 ? '' : 's'} from ${file.name}`);
+}
+async function exportPanels() {
+  const list = [...Lib.all()].sort(byBrandModel);
+  if (!list.length) { toast('There are no panels to export yet.'); return; }
+  const rows = [['Brand', 'Model', 'Width (mm)', 'Height (mm)', 'Pixels across', 'Pixels down', 'Pitch (mm)', 'Weight (kg)', 'Max power (W)', 'Typical power (W)', 'Stock']];
+  for (const p of list) rows.push([p.brand, p.model || p.name, p.w, p.h, p.px, p.py, Math.round(p.w / p.px * 1000) / 1000, p.kg, p.wMax, p.wAvg, p.stock ?? null]);
+  await Downloads.save('Your_panels.csv', new Blob([csvText(rows)], { type: 'text/csv;charset=utf-8' }));
+}
+// panels.xlsx (or panels.csv) next to the planner: everyone who opens the planner from that site gets these panels
+async function loadSitePanels({ announce = false } = {}) {
+  if (!/^https?:$/.test(location.protocol)) return;
+  for (const file of ['panels.xlsx', 'panels.csv']) {
+    let res;
+    try { res = await fetch(file, { cache: 'no-cache' }); } catch (e) { if (announce) toast('Could not reach the site. The last copy of the panel list stays in use.'); return; }
+    if (!res.ok || /text\/html/i.test(res.headers.get('content-type') || '')) continue;
+    const prev = Lib.site;
+    try {
+      const r = await Sheets.readPanels(await res.blob(), file);
+      if (!r.header) throw new Error('no column names found. The first rows need names such as Brand, Model, Width (mm), Height (mm), Pixels across and Pixels down.');
+      const changed = !prev || prev.file !== file || JSON.stringify(prev.panels) !== JSON.stringify(r.panels);
+      Lib.setSite({ file, sheet: r.sheet || '', panels: r.panels, skipped: r.skipped, loaded: new Date().toISOString() });
+      if (announce || changed) toast(`${prev && prev.file === file ? 'Updated' : 'Loaded'} ${r.panels.length} panel${r.panels.length === 1 ? '' : 's'} from ${file}`);
+    } catch (e) {
+      Lib.setSite({ file, sheet: '', panels: prev && prev.file === file ? prev.panels : [], skipped: [], error: e.message || 'unreadable', loaded: new Date().toISOString() });
+      toast(`${file} on this site could not be read`);
+    }
+    return;
+  }
+  if (Lib.site) Lib.setSite(null);
+  if (announce) toast('No panels.xlsx found on this site.');
+}
+// once: panels made in projects before there was a panel list become your panels
+function migratePanels() {
+  if (Store.flag('libmig')) return 0;
+  let n = 0;
+  for (const c of Store.localCatalogs()) {
+    let p; try { p = normalizePanel(c); } catch (e) { continue; }
+    const key = panelKey(p.brand, p.model);
+    if (Lib.find(p.id) || Lib.own.some((x) => panelKey(x.brand, x.model) === key)) continue;
+    Lib.own.push(p); n++;
+  }
+  if (n) Lib.saveOwn();
+  Store.flag('libmig', true);
+  return n;
+}
+// signed in: the account's list wins, and panels only this browser had are added to it
+async function syncCloudPanels() {
+  const cl = await Store.cloudLibrary();
+  if (!cl) { if (Lib.own.length) Store.saveLibrary(Lib.own); return; }
+  const list = cl.map((c) => { try { return normalizePanel(c); } catch (e) { return null; } }).filter(Boolean);
+  const ids = new Set(list.map((p) => p.id)), extra = Lib.own.filter((p) => !ids.has(p.id));
+  Lib.own = [...list, ...extra].sort(byBrandModel);
+  Store.saveLibrary(Lib.own, { cloud: extra.length > 0 });
+  Lib.emit();
+}
+// when the panel lists change: refresh the panel menus in the screen settings without redrawing the fields
+function onPanelsChanged() {
+  $$('#cfg select[data-bind="panel"], #cfg select[data-bind="mix.small"], #cfg select[data-bind="mix.big"]').forEach((sel) => { const v = sel.value; sel.innerHTML = panelOptions(v); sel.value = v; });
+  refreshReadouts();
 }
 
 function bigPlanModal() {
@@ -1102,18 +1466,24 @@ function start(hot) {
   let p = null;
   if (hot && hot.project) { try { p = normalizeProject(hot.project); } catch (e) { p = null; } }
   if (!p) { const lastId = Store.localLast(); p = lastId ? Store.localLoad(lastId) : null; }
+  Lib.load();
+  const migrated = migratePanels();
   const fresh = !p;
   if (fresh) p = blankProject();
   setProject(p, { fresh });
   if (hot && hot.activeId && findScreen(hot.activeId)) { S.activeId = hot.activeId; S.selection = new Set([hot.activeId]); }
   bindAll();
   renderAll();
+  Lib.on(onPanelsChanged);
+  if (migrated) toast(`${migrated} panel${migrated === 1 ? '' : 's'} from your saved projects ${migrated === 1 ? 'is' : 'are'} now in Your panels`);
+  loadSitePanels();
   View3D.init($('#view3d'));
   schedule3D(0);
   Store.onChange(updateSavePill);
   Downloads.init().then(renderExportMenu);
   Store.initCloud().then(async (ok) => {
     if (ok) {
+      await syncCloudPanels();
       const last = await Store.cloudLast();
       if (last) {
         const cp = await Store.loadCloud(last);
@@ -1136,7 +1506,7 @@ function start(hot) {
     document.fonts.ready.then(redraw);
     if (document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', redraw);
   }
-  window.__lwp = { S, change, undo, redo, recompute, renderAll, View3D, Store, runExport, buildPdfReport };
+  window.__lwp = { S, change, undo, redo, recompute, renderAll, View3D, Store, runExport, buildPdfReport, Lib, Sheets, loadSitePanels };
 }
 if (window.claude && window.claude.hot && typeof window.claude.hot.ready === 'function') window.claude.hot.ready(start);
 else start((window.claude && window.claude.hot && window.claude.hot.data) || {});

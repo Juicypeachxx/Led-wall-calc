@@ -110,7 +110,7 @@ function screenSpecs(project, s, c) {
     ['Position', `Centre ${fmtM(s.x, 2)} m from CL, bottom ${fmtM(s.y, 2)} m above floor${s.z ? `, ${fmtM(s.z, 2)} m forward` : ''}${s.yaw ? `, yaw ${fmtNum(s.yaw, 1)}°` : ''}`],
     ['Weight', `${fmtKg(c.weight)}${typicalNote(c)}, cabinets only`],
     ['Mounting', MOUNTS[c.support.mount].long],
-    ['Load per metre', c.support.kgPerM === null ? 'no data' : `${fmtInt(c.support.kgPerM)} kg per metre ${{ flown: 'along the flying bars', ground: 'along the base', back: 'of width on the back construction' }[c.support.mount]}`],
+    ['Load per metre', c.support.kgPerM === null ? 'no data' : `${fmtInt(c.support.kgPerM)} kg per metre ${{ flown: 'along the flying bars', ground: 'along the base beams' }[c.support.mount]}`],
     ['Heaviest column', c.heaviestCol ? `${fmtKg(c.heaviestCol.kg)} (column ${colLetter(c.heaviestCol.col)})${c.support.mount === 'ground' ? `, tallest column ${c.support.tallest.cabinets} cabinet${c.support.tallest.cabinets === 1 ? '' : 's'} high` : ''}` : 'no data'],
     ['Centre of gravity', c.support.cog === null ? 'no data' : `${fmtM(c.support.cog, 2)} m above the floor`],
     ['Front area (wind)', `${fmtNum(c.support.frontArea, 2)} m²${c.curve ? `, ${fmtM(c.support.projW, 2)} m wide seen from the front` : ''}`],

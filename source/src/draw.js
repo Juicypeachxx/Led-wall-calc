@@ -259,8 +259,8 @@ function drawStage(pen, v) {
       }
     }
     pen.rect(sx, sy, sw, sh, { fill: 'none', stroke: mix(sc.color, pal.ink, 0.35), sw: v.print ? 0.3 : 1 });
-    // mounting, schematic: flying bar with chains on top, ground-stack base underneath, or the frame behind
-    const mk = pal.ink2, thin = v.print ? 0.18 : 0.9, dash = v.print ? [0.8, 0.5] : [4, 3];
+    // mounting, schematic: flying bar with chains on top, or the ground beams with their adjustable feet underneath
+    const mk = pal.ink2, thin = v.print ? 0.18 : 0.9;
     const bh = Math.max(v.print ? 0.45 : 2, Math.min(sh * 0.25, fs * 0.3));
     if (sc.mount === 'flown') {
       pen.rect(sx - fs * 0.1, sy - bh, sw + fs * 0.2, bh, { fill: mk });
@@ -270,13 +270,14 @@ function drawStage(pen, v) {
         pen.line(x, sy - bh, x, sy - fs * 0.85, { stroke: mk, sw: thin * 1.6 });
         pen.circle(x, sy - fs * 0.97, fs * 0.12, { fill: 'none', stroke: mk, sw: thin * 1.3 });
       }
-    } else if (sc.mount === 'ground') {
-      pen.rect(sx - fs * 0.3, sy + sh - bh, sw + fs * 0.6, bh, { fill: mk });
-      for (const x of [sx - fs * 0.3, sx + sw + fs * 0.3 - thin * 2]) pen.rect(x, sy + sh - bh - fs * 0.35, thin * 2, fs * 0.35, { fill: mk });
-    } else if (sc.mount === 'back') {
-      const o = fs * 0.3;
-      pen.rect(sx - o, sy - o, sw + 2 * o, sh + 2 * o, { fill: 'none', stroke: mk, sw: thin, dash });
-      if (Y(0) > sy + sh + o + 0.5) for (const x of [sx - o, sx + sw + o]) pen.line(x, sy + sh + o, x, Y(0), { stroke: mk, sw: thin, dash });
+    } else {
+      pen.rect(sx - fs * 0.1, sy + sh - bh, sw + fs * 0.2, bh, { fill: mk });
+      // feet at both ends of every ground beam (one beam per column) when there is room, else about every 2 m
+      const colPx = sw / comp.cols, fw = Math.max(thin * 2.5, Math.min(fs * 0.3, colPx * 0.18)), fh = bh + fs * 0.22;
+      const xs = colPx >= fs * 0.9
+        ? Array.from({ length: comp.cols }, (_, c) => [sx + c * colPx + colPx * 0.12, sx + (c + 1) * colPx - colPx * 0.12 - fw]).flat()
+        : groundSupports(comp.W).map((u) => sx + u * s - fw / 2);
+      for (const x of xs) pen.rect(x, sy + sh - fh, fw, fh, { fill: mk });
     }
     if (v.interactive) pen.rect(sx, sy, sw, sh, { fill: '#000', opacity: 0, attrs: { 'data-sid': sc.id, class: 'hit' } });
   }

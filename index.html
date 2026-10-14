@@ -143,14 +143,30 @@ textarea { min-height: 70px; resize: vertical; }
 .stage-wrap { position: relative; height: 430px; background: var(--canvas); overflow: hidden; touch-action: none; cursor: grab; border-radius: 0 0 0 0; }
 .stage-wrap.panning { cursor: grabbing; }
 .stage-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; pointer-events: none; }
-.stage-empty-card { pointer-events: auto; cursor: default; max-width: 460px; max-height: 100%; overflow: auto; background: var(--surface); border: 1px solid var(--line-2); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; }
-.stage-empty-card > b { font-size: 16px; color: var(--ink); }
-.stage-empty-card > span { color: var(--ink-2); font-size: 13px; line-height: 1.4; }
-.stage-empty-card .linkbtn { align-self: flex-start; }
+.stage-empty-card { pointer-events: auto; cursor: default; width: 100%; max-width: 780px; background: var(--surface); border: 1px solid var(--line-2); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 12px; }
+.stage-empty-card > .linkbtn { align-self: flex-start; }
+/* with no screens the stage grows to fit the start card, and touch scrolls the page again */
+.stage-wrap.is-empty { height: auto; min-height: 430px; touch-action: auto; cursor: default; }
+.stage-wrap.is-empty > svg { position: absolute; inset: 0; }
+.stage-wrap.is-empty .stage-empty { position: relative; inset: auto; min-height: inherit; }
+.se-head { display: flex; flex-direction: column; gap: 3px; }
+.se-head b { font-size: 16px; color: var(--ink); }
+.se-head span { color: var(--ink-2); font-size: 13px; line-height: 1.4; }
+.se-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 14px 22px; align-items: start; }
+.se-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.se-h { font-family: var(--font-cond); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.se-form { border-left: 1px solid var(--line); padding-left: 22px; }
+.se-form > .btn.primary { align-self: flex-start; min-width: 140px; }
+@media (max-width: 720px) {
+  .se-cols { grid-template-columns: 1fr; }
+  .se-form { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 12px; }
+}
+.sf { display: flex; flex-direction: column; gap: 8px; }
+.sf-links { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; }
 .stage-empty-card .chip b { font-family: var(--font-ui); font-weight: 600; font-size: 14px; }
-.stage-wrap svg { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-select: none; }
+.stage-wrap > svg { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-select: none; }
 .stage-wrap .hit { cursor: move; }
-.stage-wrap svg *:not(.hit) { pointer-events: none; }
+.stage-wrap > svg *:not(.hit) { pointer-events: none; }
 .plan-wrap svg *:not(.pcell) { pointer-events: none; }
 .view3d { position: relative; height: 430px; background: var(--canvas); overflow: hidden; touch-action: none; }
 .view3d canvas { display: block; }
@@ -264,6 +280,17 @@ details.more > div { margin-top: 8px; }
 .prow .m { font-size: 12px; color: var(--ink-3); }
 .prow .b { display: flex; gap: 6px; }
 .empty { padding: 22px; text-align: center; color: var(--ink-3); }
+.mut { color: var(--ink-3); }
+.warn { color: var(--warn); }
+.mgrid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.lib { display: flex; flex-direction: column; gap: 14px; }
+.lib-sec { display: flex; flex-direction: column; gap: 8px; }
+.lib-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.lib-sec h4 { margin: 0; font-family: var(--font-cond); font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.lib-brand { padding: 7px 12px 5px; background: var(--surface-2); border-top: 1px solid var(--line); font-family: var(--font-cond); font-weight: 700; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+.lib-brand:first-child { border-top: 0; }
+.lib-brand + .prow { border-top: 1px solid var(--line); }
+.prow .m.mono { font-family: var(--font-mono); font-size: 11.5px; overflow-wrap: anywhere; }
 .big-plan { background: var(--plan-bg); border-radius: var(--r); overflow: auto; }
 
 .toasts { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: center; width: min(520px, calc(100% - 32px)); pointer-events: none; }
@@ -292,9 +319,12 @@ details.more > div { margin-top: 8px; }
   .tile .v { font-size: 20px; }
   .menu { position: fixed; left: 16px; right: 16px; top: auto; bottom: 16px; min-width: 0; }
   .stage-empty { padding: 8px; }
-  .stage-empty-card { padding: 12px 14px; gap: 8px; }
-  .stage-empty-card > b { font-size: 15px; }
+  .stage-wrap.is-empty { min-height: 340px; }
+  .stage-empty-card { padding: 12px 14px; gap: 10px; }
+  .se-head b { font-size: 15px; }
   .stage-empty-card .chips { display: grid; grid-template-columns: 1fr 1fr; }
+  .mgrid.two { grid-template-columns: 1fr; }
+  .prow { grid-template-columns: 1fr; }
   .stage-empty-card .chip b { font-size: 13px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
@@ -354,7 +384,7 @@ details.more > div { margin-top: 8px; }
       <button class="btn" id="btn-new" title="Start a new project"><svg class="ico"><use href="#i-new"/></svg><span class="lbl-txt">New</span></button>
       <button class="btn" id="btn-open" title="Open a saved project"><svg class="ico"><use href="#i-open"/></svg><span class="lbl-txt">Open</span></button>
       <button class="btn" id="btn-dup" title="Save a copy of this project"><svg class="ico"><use href="#i-copy"/></svg><span class="lbl-txt">Duplicate</span></button>
-      <button class="btn" id="btn-import" title="Open a project file (.json)"><svg class="ico"><use href="#i-import"/></svg><span class="lbl-txt">Import</span></button>
+      <button class="btn" id="btn-import" title="Open a project file (.json), or read a panel list (.xlsx, .csv)"><svg class="ico"><use href="#i-import"/></svg><span class="lbl-txt">Import</span></button>
       <div class="menu-wrap">
         <button class="btn primary" id="btn-export" aria-haspopup="true" aria-expanded="false"><svg class="ico"><use href="#i-export"/></svg>Export<svg class="ico"><use href="#i-caret"/></svg></button>
         <div class="menu" id="export-menu" hidden></div>
@@ -397,14 +427,16 @@ details.more > div { margin-top: 8px; }
       <div class="stage-wrap" id="stage-wrap"><svg id="stage-svg" role="img" aria-label="Stage layout, front view"></svg>
         <div class="stage-empty" id="stage-empty" hidden>
           <div class="stage-empty-card">
-            <b>No screens yet</b>
-            <span>Pick the first screen to add. Its size, cabinets and position can all be changed afterwards.</span>
-            <div class="chips" id="empty-kinds"></div>
-            <button class="linkbtn" id="btn-example">Or open the example project</button>
+            <div class="se-head"><b>No screens yet</b><span>Start with a screen type, or enter the size you need with your own panel. Everything can be changed afterwards.</span></div>
+            <div class="se-cols">
+              <div class="se-col"><div class="se-h">Screen type</div><div class="chips" id="empty-kinds"></div></div>
+              <form class="se-col se-form" id="start-form" novalidate><div class="se-h">Your own size</div><div id="start-fields"></div><button type="submit" class="btn primary" id="sf-add">Add screen</button></form>
+            </div>
+            <button type="button" class="linkbtn" id="btn-example">Or open the example project</button>
           </div>
         </div>
       </div>
-      <div class="card-foot">Drag a screen to move it. Shift-click selects several. Scroll or pinch to zoom, drag empty space to pan. Hold Alt while dragging to skip snapping. Screens are drawn flat (developed); yaw, depth and curves show in the 3D view. A bar with chains on top marks a flown screen, a bar underneath a ground stack, a dashed frame a back construction.</div>
+      <div class="card-foot">Drag a screen to move it. Shift-click selects several. Scroll or pinch to zoom, drag empty space to pan. Hold Alt while dragging to skip snapping. Screens are drawn flat (developed); yaw, depth and curves show in the 3D view. A bar with chains on top marks a flown screen, ground beams with feet underneath a ground stack.</div>
     </div>
     <div class="card">
       <div class="card-head">
@@ -456,7 +488,8 @@ details.more > div { margin-top: 8px; }
 </div>
 <div id="modal-root"></div>
 <div id="toasts" class="toasts" aria-live="polite"></div>
-<input type="file" id="file-import" accept=".json,application/json" hidden>
+<input type="file" id="file-import" accept=".json,application/json,.xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>
+<input type="file" id="file-panels" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain" hidden>
 
 <script>/* three.min.js (embedded) */
 /**
@@ -1993,14 +2026,21 @@ const KINDS = {
 
 /* ---------- how a screen is held up ----------
    The mounting sets the build order: a flown screen is hung from the top row down (the top row goes on
-   the flying bars, the hoists lift, the next row goes underneath); a ground stack and a screen fixed to a
-   back construction are built from the bottom row up. */
+   the flying bars, the hoists lift, the next row goes underneath); a ground stack stands on base beams
+   with outriggers and is built from the bottom row up. */
 const MOUNTS = {
   flown: { label: 'Flown', long: 'Flown (hung from flying bars)' },
-  ground: { label: 'Ground stack', long: 'Ground stack (standing on a base)' },
-  back: { label: 'Back construction', long: 'Back construction (fixed to a truss or scaffold frame)' },
+  ground: { label: 'Ground stack', long: 'Ground stack (on ground beams, with rear supports)' },
 };
-const MOUNT_ORDER = ['flown', 'ground', 'back'];
+const MOUNT_ORDER = ['flown', 'ground'];
+// A ground stack as built with portable ground-stack systems: the cabinets stand on ground beams, one per
+// cabinet column, each on two adjustable feet; behind the screen an upright support post stands on an
+// H-shaped floor frame with levelling feet, at both ends (ladder frames there) and about every 2 m between.
+// Returns where the supports go, in mm along the (developed) screen width.
+function groundSupports(W) {
+  const n = Math.max(2, Math.round(W / 2000) + 1), edge = Math.min(100, W / 4);
+  return Array.from({ length: n }, (_, i) => edge + (W - 2 * edge) * i / (n - 1));
+}
 function buildOrderText(mount) {
   return mount === 'flown'
     ? 'top row first, left to right, then each row below (a flown screen is hung from the top down)'
@@ -2112,8 +2152,9 @@ function normalizeProject(raw) {
     s.mix = Object.assign(defaultScreen().mix, s.mix || {});
     s.mix.w = clamp(num(s.mix.w, 4), 0.1, 200); s.mix.h = clamp(num(s.mix.h, 2.5), 0.1, 100); s.mix.stock = clamp(int(s.mix.stock, 0), 0, 100000);
     s.shape = ['flat', 'concave', 'convex'].includes(s.shape) ? s.shape : 'flat';
-    // projects saved before the mounting option: a screen standing on the floor is a ground stack, one higher up is flown
-    s.mount = MOUNTS[rs.mount] ? rs.mount : (s.y > 0 ? 'flown' : 'ground');
+    // projects saved before the mounting option: a screen standing on the floor is a ground stack, one higher up is flown;
+    // the back construction option was dropped, and such a screen, built from the bottom up, becomes a ground stack
+    s.mount = rs.mount === 'back' ? 'ground' : MOUNTS[rs.mount] ? rs.mount : (s.y > 0 ? 'flown' : 'ground');
     s.angle = clamp(num(s.angle, 5), 0.5, 45);
     s.holes = Array.isArray(s.holes) ? s.holes.filter((k) => typeof k === 'string' && /^\d+,\d+$/.test(k)).slice(0, 20000) : [];
     s.data = Object.assign({ dir: 'h', start: 'bl', path: 'snake', split: 'lines' }, s.data || {});
@@ -2134,13 +2175,129 @@ function normalizeProject(raw) {
 
 function normalizePanel(c) {
   const opt = (v) => (v === '' || v === null || v === undefined || !Number.isFinite(num(v, NaN)) ? null : Math.max(0, num(v)));
+  const clean = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const brand = clean(c.brand, 40);
+  let model = clean(c.model, 80);
+  if (!model) {
+    // panels saved before brand and model existed keep their whole name as the model
+    let n = clean(c.name, 121);
+    if (brand && n.toLowerCase().startsWith(brand.toLowerCase() + ' ')) n = n.slice(brand.length + 1);
+    model = n.slice(0, 80);
+  }
+  if (!brand && !model) model = 'Custom panel';
+  const stock = opt(c.stock);
   return {
     id: typeof c.id === 'string' && c.id ? c.id.slice(0, 40) : uid('c-'),
-    name: String(c.name || 'Custom panel').slice(0, 80),
+    brand, model, name: panelName(brand, model),
     w: clamp(num(c.w, 500), 10, 5000), h: clamp(num(c.h, 500), 10, 5000),
     px: clamp(int(c.px, 128), 1, 8192), py: clamp(int(c.py, 128), 1, 8192),
-    kg: opt(c.kg), wMax: opt(c.wMax), wAvg: opt(c.wAvg), builtin: false,
+    kg: opt(c.kg), wMax: opt(c.wMax), wAvg: opt(c.wAvg), stock: stock === null ? null : Math.min(1e6, Math.round(stock)), builtin: false,
   };
+}
+
+/* ---------- your own panels: brand + model ---------- */
+// "Absen" + "PL2.5 Pro" -> "Absen PL2.5 Pro"; a model that already starts with the brand does not repeat it
+function panelName(brand, model) {
+  const b = String(brand || '').trim(), m = String(model || '').trim();
+  if (!b) return m;
+  if (!m) return b;
+  return m.toLowerCase().startsWith(b.toLowerCase()) ? m : `${b} ${m}`;
+}
+// brand + model ignoring case, accents, spacing and punctuation: "ROE Visual" + "BP2-V2" -> "roe visual bp2 v2"
+function panelKey(brand, model) {
+  return panelName(brand, model).normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+// the same brand and model always give the same id, so a panel read again from a spreadsheet
+// is still the same panel in saved projects
+function panelIdFor(brand, model) {
+  const k = panelKey(brand, model);
+  let a = 2166136261, b = 5381;
+  for (let i = 0; i < k.length; i++) { const c = k.charCodeAt(i); a = Math.imul(a ^ c, 16777619); b = Math.imul(b, 33) ^ c; }
+  return 'x-' + (a >>> 0).toString(36) + (b >>> 0).toString(36);
+}
+// same cabinet data (stock is left out: it belongs to the panel list, not to a project)
+function samePanel(a, b) {
+  return !!a && !!b && ['brand', 'model', 'w', 'h', 'px', 'py', 'kg', 'wMax', 'wAvg'].every((k) => (a[k] ?? null) === (b[k] ?? null));
+}
+
+/* ---------- panel lists from a spreadsheet ----------
+   One row per panel under a row of column names. The names are matched loosely (English plus a few
+   Slovenian ones) and units in them such as "(mm)" are ignored. A panel needs a model (or a brand),
+   its cabinet size in millimetres and its pixels (or the pixel pitch); weight, power and stock are optional. */
+function sheetField(raw) {
+  const s = ` ${String(raw ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+  const t = s.trim();
+  if (!t) return null;
+  const has = (re) => re.test(s);
+  if (has(/ (brand|manufacturer|make|maker|vendor|znamka|proizvajalec) /)) return 'brand';
+  if (has(/ (notes?|comments?|remarks?|opombe?) /)) return 'note';
+  if (has(/ (pitch|korak) /)) return 'pitch';
+  if (has(/ (pixels?|px|pix|res|resolution|piksl\w*|locljivost\w*) /)) {
+    const across = has(/ (across|wide|width|horizontal|horiz|x|w|vodoravn\w*|sirin\w*) /), down = has(/ (down|high|height|vertical|vert|y|h|navpicn\w*|visin\w*) /);
+    return across && !down ? 'px' : down && !across ? 'py' : 'res';
+  }
+  if (has(/ (stock|qty|quantity|on hand|count|pcs|units|zaloga|kolicina|stevilo|kosov) /)) return 'stock';
+  if (has(/ (typical|typ|avg|average|nominal|tipicn\w*|povprecn\w*) /)) return 'wAvg';
+  if (has(/ (power|watts?|consumption|moc|poraba) /) || /^(max|max w|w max|max kw)$/.test(t)) return 'wMax';
+  if (has(/ (weight|mass|teza|masa) /) || t === 'kg') return 'kg';
+  if (has(/ (size|dimensions?|velikost|dimenzij\w*) /)) return 'size';
+  if (has(/ (width|sirina) /) || t === 'w' || t === 'w mm') return 'w';
+  if (has(/ (height|visina) /) || t === 'h' || t === 'h mm') return 'h';
+  if (has(/ (model|name|product|panel|cabinet|naziv|ime|izdelek|oznaka) /)) return 'model';
+  return null;
+}
+// a number as typed in a sheet: "8,5", "8.5", "1.200" or "1,200" (thousands), "180 W", "P2.6", "1,2 kW"
+// prefer: the file's decimal mark when a value could be read both ways ("1,200")
+function sheetNum(v, prefer = '.') {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  if (typeof v !== 'string') return NaN;
+  let t = v.replace(/[\s  '’]/g, '').replace(/^p(?=\d)/i, '');
+  const unit = /[a-z²%]+\.?$/i.exec(t); if (unit) t = t.slice(0, unit.index);
+  if (!/^-?\d[\d.,]*$/.test(t)) return NaN;
+  const dot = t.includes('.'), com = t.includes(',');
+  if (dot && com) t = t.lastIndexOf(',') > t.lastIndexOf('.') ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+  else if (com) t = (prefer === '.' && /^-?\d{1,3}(,\d{3})+$/.test(t)) || t.split(',').length > 2 ? t.replace(/,/g, '') : t.replace(',', '.');
+  else if (dot && ((prefer === ',' && /^-?\d{1,3}(\.\d{3})+$/.test(t)) || t.split('.').length > 2)) t = t.replace(/\./g, '');
+  const x = Number(t);
+  return Number.isFinite(x) ? x * (unit && /^kw$/i.test(unit[0]) ? 1000 : 1) : NaN;
+}
+function panelsFromTable(rows, prefer = '.') {
+  const text = (v) => (v === null || v === undefined ? '' : String(v)).replace(/\s+/g, ' ').trim();
+  // the column names may sit below a title: use the first row that names a model (or brand) and a size
+  let head = null;
+  for (let r = 0; r < Math.min(rows.length, 12) && !head; r++) {
+    const map = {};
+    (rows[r] || []).forEach((v, i) => { const f = typeof v === 'string' ? sheetField(v) : null; if (f && !(f in map)) map[f] = i; });
+    if (('model' in map || 'brand' in map) && (('w' in map && 'h' in map) || 'size' in map)) head = { row: r, map };
+  }
+  if (!head) return { panels: [], skipped: [], header: false, columns: [] };
+  const m = head.map, cell = (row, f) => (f in m ? row[m[f]] : null), n = (v) => sheetNum(v, prefer);
+  const pair = (v) => { const r = /^([\d.,]+)\s*(?:mm|px)?\s*x\s*([\d.,]+)/i.exec(text(v).replace(/[×✕*]/g, 'x')); return r ? [n(r[1]), n(r[2])] : [NaN, NaN]; };
+  const opt = (v) => { const x = n(v); return x >= 0 ? x : null; };
+  const panels = [], skipped = [], seen = new Map();
+  for (let r = head.row + 1; r < rows.length && panels.length < 2000; r++) {
+    const row = rows[r] || [];
+    if (!row.some((v) => text(v) !== '')) continue;
+    const line = r + 1, brand = text(cell(row, 'brand')).slice(0, 40), model = text(cell(row, 'model')).slice(0, 80);
+    if (!brand && !model) { skipped.push({ row: line, name: '', reason: 'no brand or model' }); continue; }
+    const name = panelName(brand, model);
+    let w = n(cell(row, 'w')), h = n(cell(row, 'h'));
+    if (!(w > 0 && h > 0) && 'size' in m) [w, h] = pair(cell(row, 'size'));
+    let px = n(cell(row, 'px')), py = n(cell(row, 'py'));
+    if (!(px > 0 && py > 0) && 'res' in m) [px, py] = pair(cell(row, 'res'));
+    // from the pitch, with square pixels: the rounded pitch (2.6 for 2.604) would otherwise give 385 instead of 384 down a 1 m cabinet
+    if (!(px > 0 && py > 0) && w > 0 && h > 0) { const p = n(cell(row, 'pitch')); if (p > 0) { px = Math.round(w / p); py = h * px / w; } }
+    if (!(w > 0 && h > 0)) { skipped.push({ row: line, name, reason: 'no cabinet width and height' }); continue; }
+    if (w < 10 || h < 10 || w > 5000 || h > 5000) { skipped.push({ row: line, name, reason: 'cabinet width and height should be in millimetres' }); continue; }
+    if (!(px >= 0.5 && py >= 0.5)) { skipped.push({ row: line, name, reason: 'no pixels across and down (or pixel pitch)' }); continue; }
+    if (px > 8192 || py > 8192) { skipped.push({ row: line, name, reason: 'more than 8,192 pixels across or down' }); continue; }
+    const id = panelIdFor(brand, model);
+    if (seen.has(id)) { skipped.push({ row: line, name, reason: `same brand and model as row ${seen.get(id)}` }); continue; }
+    seen.set(id, line);
+    panels.push(normalizePanel({ id, brand, model, w, h, px: Math.round(px), py: Math.round(py),
+      kg: opt(cell(row, 'kg')), wMax: opt(cell(row, 'wMax')), wAvg: opt(cell(row, 'wAvg')), stock: opt(cell(row, 'stock')) }));
+  }
+  return { panels, skipped, header: true, columns: Object.keys(m) };
 }
 
 /* ---------- formatting ---------- */
@@ -2290,7 +2447,7 @@ function computeScreen(project, s) {
   const active = cells.filter((c) => c.active);
 
   // build order numbers, row by row and left to right: from the top row down for a flown screen,
-  // from the bottom row up for a ground stack or a back construction (see MOUNTS)
+  // from the bottom row up for a ground stack (see MOUNTS)
   { let n = 0; const rowsInOrder = [...Array(R).keys()]; if (s.mount === 'flown') rowsInOrder.reverse();
     for (const r of rowsInOrder) for (let c = 0; c < cols; c++) { const cell = grid[r][c]; if (cell.active) cell.build = ++n; } }
 
@@ -2509,8 +2666,16 @@ function packingList(project, comps, plan) {
     if (parts.length) items.push({ group, item, qty: sum(parts, (x) => x.n), unit: 'm', parts, note });
   };
   metres('Rigging', 'Flying bars along the top edge', byMount('flown'), 'hanging points and hoists per the rigging plan');
-  metres('Rigging', 'Ground-stack base along the bottom edge', byMount('ground'), 'plus rear braces or outriggers as the cabinet system requires');
-  metres('Rigging', 'Back construction (truss or scaffold) behind the screen', byMount('back'), 'as designed by the structural engineer', true);
+  // ground stacks: a ground beam under every cabinet column (as wide as the cabinet), and the rear supports
+  const grounds = byMount('ground'), widths = [...new Set(grounds.map(({ c }) => c.colW))].sort((a, b) => a - b);
+  for (const w of widths) {
+    const sel = grounds.filter(({ c }) => c.colW === w), parts = sel.map(({ s, c }) => ({ name: s.name, n: c.cols }));
+    items.push({ group: 'Rigging', item: `Ground beam ${+w.toFixed(1)} mm with 2 adjustable feet (one per cabinet column)`, qty: sum(parts, (x) => x.n), parts, note: 'the cabinets stand on these' });
+  }
+  if (grounds.length) {
+    const parts = grounds.map(({ s, c }) => ({ name: s.name, n: groundSupports(c.W).length, label: `${groundSupports(c.W).length} for ${fmtNum(c.H / 1000, 2)} m high` }));
+    items.push({ group: 'Rigging', item: 'Rear support: upright post on an H-frame base with levelling feet', qty: sum(parts, (x) => x.n), parts, note: 'at both ends and about every 2 m; number and post height as the ground-stack system requires' });
+  }
   // power
   if (list.length && list.every(({ c }) => c.power)) {
     add('Power', `Power feed cable, one per ${fmtInt(st.circuitAmps)} A circuit`, per((c) => c.power.circuits.length), 'length to suit the distribution');
@@ -2583,8 +2748,162 @@ function uniqueName(project, base) {
 if (typeof module !== 'undefined') {
   module.exports = { BUILTIN_PANELS, KINDS, CONTROLLERS, computeScreen, computeTotals, suggest169, exampleProject, blankProject, normalizeProject,
     ratioInfo, splitLines, orderLines, facetTransforms, colLetter, slug, fmtInt, fmtM, fmtSize, getPanel, defaultScreen, placeNewScreen, holesInGrid, defaultSettings,
-    planControllers, assignControllers, packingList, chainLinks, MOUNTS, MOUNT_ORDER, buildOrderText, packQty, packPart };
+    planControllers, assignControllers, packingList, chainLinks, MOUNTS, MOUNT_ORDER, buildOrderText, packQty, packPart,
+    normalizePanel, panelName, panelKey, panelIdFor, samePanel, sheetField, sheetNum, panelsFromTable, findPanel, KIND_ORDER, groundSupports };
 }
+
+/* ============================================================
+   SHEETS — reads a panel list from an Excel workbook (.xlsx) or a CSV file.
+   No library needed: an .xlsx file is a zip of XML parts, unpacked with the
+   browser's DecompressionStream and read with DOMParser. The rows go to
+   panelsFromTable() in the engine, which finds the columns.
+   ============================================================ */
+
+const Sheets = (() => {
+  const NOT_A_SHEET = 'The file is not an Excel workbook (.xlsx) or a CSV file. Save it from Excel, Numbers or Google Sheets as .xlsx or .csv and import that.';
+
+  async function inflate(bytes) {
+    if (typeof DecompressionStream !== 'function') throw new Error('This browser cannot open Excel files. Save the sheet as CSV and import that, or update the browser.');
+    const out = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(out).arrayBuffer());
+  }
+  // the zip's central directory: name -> where the compressed part starts and how it is packed
+  function zipEntries(buf) {
+    const dv = new DataView(buf), n = buf.byteLength;
+    let end = -1;
+    for (let i = n - 22; i >= Math.max(0, n - 22 - 65535); i--) if (dv.getUint32(i, true) === 0x06054b50) { end = i; break; }
+    if (end < 0) throw new Error(NOT_A_SHEET);
+    const count = dv.getUint16(end + 10, true); let p = dv.getUint32(end + 16, true);
+    const files = new Map(), td = new TextDecoder();
+    for (let k = 0; k < count && p + 46 <= n; k++) {
+      if (dv.getUint32(p, true) !== 0x02014b50) break;
+      const fl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true);
+      const name = td.decode(new Uint8Array(buf, p + 46, fl)).replace(/\\/g, '/').replace(/^\/+/, '');
+      files.set(name.toLowerCase(), { method: dv.getUint16(p + 10, true), size: dv.getUint32(p + 20, true), off: dv.getUint32(p + 42, true) });
+      p += 46 + fl + xl + cl;
+    }
+    return files;
+  }
+  async function zipText(buf, files, name) {
+    const f = files.get(name.toLowerCase()); if (!f) return null;
+    const dv = new DataView(buf);
+    if (f.off + 30 > buf.byteLength || dv.getUint32(f.off, true) !== 0x04034b50) throw new Error('The Excel file is damaged.');
+    const start = f.off + 30 + dv.getUint16(f.off + 26, true) + dv.getUint16(f.off + 28, true);
+    if (start + f.size > buf.byteLength) throw new Error('The Excel file is damaged.');
+    const raw = new Uint8Array(buf, start, f.size);
+    const bytes = f.method === 0 ? raw : f.method === 8 ? await inflate(raw) : null;
+    if (!bytes) throw new Error('The Excel file is packed in a way this planner cannot read. Save it again as .xlsx or CSV.');
+    return new TextDecoder().decode(bytes);
+  }
+  const xml = (t) => new DOMParser().parseFromString(t, 'application/xml');
+  const all = (el, tag) => Array.from(el.getElementsByTagNameNS('*', tag));
+  const colIndex = (ref) => { let c = 0; for (const ch of ref.toUpperCase()) { const k = ch.charCodeAt(0); if (k < 65 || k > 90) break; c = c * 26 + (k - 64); } return c - 1; };
+  // "worksheets/sheet1.xml" next to xl/workbook.xml, or an absolute "/xl/worksheets/sheet1.xml"
+  function partPath(target) {
+    const parts = (target.startsWith('/') ? target.slice(1) : 'xl/' + target).split('/');
+    const out = []; for (const s of parts) { if (s === '..') out.pop(); else if (s && s !== '.') out.push(s); }
+    return out.join('/');
+  }
+
+  function sharedStrings(doc) {
+    // rich text keeps its runs; phonetic hints (rPh) are left out
+    return all(doc, 'si').map((si) => all(si, 't').filter((t) => !t.parentNode || t.parentNode.localName !== 'rPh').map((t) => t.textContent).join(''));
+  }
+  function sheetRows(doc, shared) {
+    const rows = [];
+    for (const row of all(doc, 'row')) {
+      const r = parseInt(row.getAttribute('r'), 10); const ri = Number.isFinite(r) ? r - 1 : rows.length;
+      if (ri < 0 || ri > 20000) continue;
+      const out = [];
+      for (const c of all(row, 'c')) {
+        const ref = c.getAttribute('r'); const ci = ref ? colIndex(ref) : out.length;
+        if (ci < 0 || ci > 255) continue;
+        const t = c.getAttribute('t'); const v = all(c, 'v')[0]; const vt = v ? v.textContent : null;
+        let val = null;
+        if (t === 's') val = vt === null ? '' : (shared[parseInt(vt, 10)] ?? '');
+        else if (t === 'inlineStr') val = all(c, 't').map((x) => x.textContent).join('');
+        else if (t === 'str' || t === 'e') val = vt ?? '';
+        else if (t === 'b') val = vt === '1' ? 'TRUE' : 'FALSE';
+        else if (vt !== null && vt !== '') { const x = Number(vt); val = Number.isFinite(x) ? x : vt; }
+        out[ci] = val;
+      }
+      rows[ri] = out;
+    }
+    return Array.from(rows, (x) => x || []);
+  }
+  async function workbook(buf) {
+    const files = zipEntries(buf);
+    const wbText = await zipText(buf, files, 'xl/workbook.xml');
+    if (!wbText) throw new Error(NOT_A_SHEET);
+    const wb = xml(wbText), rels = xml((await zipText(buf, files, 'xl/_rels/workbook.xml.rels')) || '<r/>');
+    const target = new Map(all(rels, 'Relationship').map((r) => [r.getAttribute('Id'), r.getAttribute('Target') || '']));
+    const ssText = await zipText(buf, files, 'xl/sharedStrings.xml');
+    const shared = ssText ? sharedStrings(xml(ssText)) : [];
+    const sheets = all(wb, 'sheet').map((s, i) => {
+      const idAttr = Array.from(s.attributes).find((a) => a.localName === 'id' && a.name !== 'sheetId');
+      const t = idAttr && target.get(idAttr.value);
+      return { name: s.getAttribute('name') || `Sheet ${i + 1}`, path: t ? partPath(t) : `xl/worksheets/sheet${i + 1}.xml` };
+    });
+    return { sheets, read: async (sh) => { const t = await zipText(buf, files, sh.path); return t ? sheetRows(xml(t), shared) : []; } };
+  }
+
+  function decodeText(buf) {
+    const b = new Uint8Array(buf);
+    if (b[0] === 0xFF && b[1] === 0xFE) return new TextDecoder('utf-16le').decode(b.subarray(2));
+    if (b[0] === 0xFE && b[1] === 0xFF) return new TextDecoder('utf-16be').decode(b.subarray(2));
+    // Excel's plain "CSV" is saved in the computer's own code page (Central European on Slovenian Windows)
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(b); } catch (e) { return new TextDecoder('windows-1250').decode(b); }
+  }
+  function parseCSV(text) {
+    text = text.replace(/^﻿/, '');
+    const first = (/^[^\r\n]*/.exec(text) || [''])[0];
+    const counts = { '\t': 0, ';': 0, ',': 0 }; let q = false;
+    for (const ch of first) { if (ch === '"') q = !q; else if (!q && ch in counts) counts[ch]++; }
+    const sep = counts['\t'] > counts[';'] && counts['\t'] > counts[','] ? '\t' : counts[';'] > counts[','] ? ';' : ',';
+    const rows = []; let row = [], cell = '', inq = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (inq) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else inq = false; } else cell += ch; continue; }
+      if (ch === '"' && cell === '') { inq = true; continue; }
+      if (ch === sep) { row.push(cell); cell = ''; continue; }
+      if (ch === '\r' || ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; if (ch === '\r' && text[i + 1] === '\n') i++; continue; }
+      cell += ch;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    // semicolons mean decimal commas (Excel in most of Europe); otherwise go by how the numbers look
+    let prefer = '.';
+    if (sep === ';') prefer = ',';
+    else {
+      let com = 0, dot = 0;
+      for (const r of rows.slice(0, 200)) for (const v of r) { if (/^\s*-?\d+,\d{1,2}\s*$/.test(v)) com++; else if (/^\s*-?\d+\.\d{1,2}\s*$/.test(v)) dot++; }
+      if (com > dot) prefer = ',';
+    }
+    return { rows, prefer, sep };
+  }
+
+  // -> { panels, skipped: [{ row, name, reason }], header, columns, sheet, file }
+  async function readPanels(blob, name = '') {
+    if (blob.size > 20 * 1024 * 1024) throw new Error('The file is larger than 20 MB. A panel list should be much smaller; check that it is the right file.');
+    const buf = await blob.arrayBuffer();
+    const b = new Uint8Array(buf.slice(0, 4));
+    if (b[0] === 0x50 && b[1] === 0x4B) {
+      const wb = await workbook(buf);
+      // a sheet named like a panel list first, then the others in order
+      const named = (s) => (/panel|cabinet|led|screen|baza|zaslon/i.test(s.name) ? 1 : 0);
+      for (const sh of [...wb.sheets].sort((x, y) => named(y) - named(x))) {
+        const r = panelsFromTable(await wb.read(sh), '.');
+        if (r.header) return Object.assign(r, { sheet: sh.name, file: name });
+      }
+      return { panels: [], skipped: [], header: false, columns: [], sheet: '', file: name };
+    }
+    if (b[0] === 0xD0 && b[1] === 0xCF) throw new Error('This is an old Excel file (.xls). In Excel, save it as an Excel Workbook (.xlsx) and import that.');
+    const text = decodeText(buf);
+    if (/^\s*</.test(text)) throw new Error(NOT_A_SHEET);
+    const { rows, prefer } = parseCSV(text);
+    return Object.assign(panelsFromTable(rows, prefer), { sheet: '', file: name });
+  }
+  return { readPanels, parseCSV };
+})();
 
 /* ============================================================
    PENS — one drawing API, three back-ends:
@@ -3030,8 +3349,8 @@ function drawStage(pen, v) {
       }
     }
     pen.rect(sx, sy, sw, sh, { fill: 'none', stroke: mix(sc.color, pal.ink, 0.35), sw: v.print ? 0.3 : 1 });
-    // mounting, schematic: flying bar with chains on top, ground-stack base underneath, or the frame behind
-    const mk = pal.ink2, thin = v.print ? 0.18 : 0.9, dash = v.print ? [0.8, 0.5] : [4, 3];
+    // mounting, schematic: flying bar with chains on top, or the ground beams with their adjustable feet underneath
+    const mk = pal.ink2, thin = v.print ? 0.18 : 0.9;
     const bh = Math.max(v.print ? 0.45 : 2, Math.min(sh * 0.25, fs * 0.3));
     if (sc.mount === 'flown') {
       pen.rect(sx - fs * 0.1, sy - bh, sw + fs * 0.2, bh, { fill: mk });
@@ -3041,13 +3360,14 @@ function drawStage(pen, v) {
         pen.line(x, sy - bh, x, sy - fs * 0.85, { stroke: mk, sw: thin * 1.6 });
         pen.circle(x, sy - fs * 0.97, fs * 0.12, { fill: 'none', stroke: mk, sw: thin * 1.3 });
       }
-    } else if (sc.mount === 'ground') {
-      pen.rect(sx - fs * 0.3, sy + sh - bh, sw + fs * 0.6, bh, { fill: mk });
-      for (const x of [sx - fs * 0.3, sx + sw + fs * 0.3 - thin * 2]) pen.rect(x, sy + sh - bh - fs * 0.35, thin * 2, fs * 0.35, { fill: mk });
-    } else if (sc.mount === 'back') {
-      const o = fs * 0.3;
-      pen.rect(sx - o, sy - o, sw + 2 * o, sh + 2 * o, { fill: 'none', stroke: mk, sw: thin, dash });
-      if (Y(0) > sy + sh + o + 0.5) for (const x of [sx - o, sx + sw + o]) pen.line(x, sy + sh + o, x, Y(0), { stroke: mk, sw: thin, dash });
+    } else {
+      pen.rect(sx - fs * 0.1, sy + sh - bh, sw + fs * 0.2, bh, { fill: mk });
+      // feet at both ends of every ground beam (one beam per column) when there is room, else about every 2 m
+      const colPx = sw / comp.cols, fw = Math.max(thin * 2.5, Math.min(fs * 0.3, colPx * 0.18)), fh = bh + fs * 0.22;
+      const xs = colPx >= fs * 0.9
+        ? Array.from({ length: comp.cols }, (_, c) => [sx + c * colPx + colPx * 0.12, sx + (c + 1) * colPx - colPx * 0.12 - fw]).flat()
+        : groundSupports(comp.W).map((u) => sx + u * s - fw / 2);
+      for (const x of xs) pen.rect(x, sy + sh - fh, fw, fh, { fill: mk });
     }
     if (v.interactive) pen.rect(sx, sy, sw, sh, { fill: '#000', opacity: 0, attrs: { 'data-sid': sc.id, class: 'hit' } });
   }
@@ -3479,8 +3799,8 @@ const View3D = (() => {
     return { group, dispose: () => disposables.forEach((d) => d && d.dispose && d.dispose()) };
   }
 
-  // Mounting, schematic only: flying bars with chains and hoists on top, a ground-stack base with rear
-  // braces, or a frame of posts and rails behind the cabinets (posts down to the floor).
+  // Mounting, schematic only: flying bars with chains and hoists on top, or a ground stack: ground beams on
+  // adjustable feet under the cabinets and upright posts on H-frame bases behind them.
   function addSupports(group, disposables, s, comp, facets, H, depth, colW, colors) {
     const mount = s.mount || 'ground';
     const mat = new THREE.MeshStandardMaterial({ color: colors.support, roughness: 0.65, metalness: 0.4 }); disposables.push(mat);
@@ -3500,14 +3820,35 @@ const View3D = (() => {
         items.push({ f: facets[i], lx: 0, ly: H + 0.66, lz: -depth / 2, sx: 0.025, sy: 1.2, sz: 0.025 });                     // chain
         items.push({ f: facets[i], lx: 0, ly: H + 1.4, lz: -depth / 2, sx: 0.2, sy: 0.28, sz: 0.2 });                         // hoist
       }
-    } else if (mount === 'ground') {
-      for (const f of facets) items.push({ f, lx: 0, ly: -0.025, lz: -0.29, sx: colW, sy: 0.05, sz: 0.62 });                  // base
-      const hTop = H * 0.75, d = Math.min(1.6, Math.max(0.6, H * 0.45)), L = Math.hypot(hTop, d);
-      for (const i of spread(2)) items.push({ f: facets[i], lx: 0, ly: hTop / 2, lz: -depth - d / 2, sx: 0.04, sy: L, sz: 0.04, rx: Math.atan2(d, hTop) });   // rear brace
     } else {
-      const floor = -(num(s.y) || 0) / 1000, zb = -depth - 0.2, m = 0.12;
-      for (const i of spread(3)) items.push({ f: facets[i], lx: 0, ly: (floor + H + 0.1) / 2, lz: zb, sx: m, sy: H + 0.1 - floor, sz: m });   // post
-      for (const f of facets) for (const y of (H > 0.8 ? [0.25, H - 0.25] : [H / 2])) items.push({ f, lx: 0, ly: y, lz: zb, sx: colW, sy: m * 0.7, sz: m * 0.7 });   // rails
+      // ground stack (see groundSupports in the engine): a ground beam under each cabinet column on two
+      // adjustable feet, just below the bottom edge; behind the screen, upright posts on H-shaped floor frames
+      // with four levelling feet, ladder frames at both ends. No diagonal braces.
+      const floor = -(num(s.y) || 0) / 1000;                          // the floor, in the screen's own height
+      const foot = (f, lx, y0, z) => {                                 // levelling foot: plate on the floor, spindle above
+        items.push({ f, lx, ly: y0 + 0.008, lz: z, sx: 0.1, sy: 0.016, sz: 0.1 });
+        items.push({ f, lx, ly: y0 + 0.045, lz: z, sx: 0.03, sy: 0.06, sz: 0.03 });
+      };
+      for (let k = 0; k < C; k++) {                                     // ground beams, one per column
+        items.push({ f: facets[k], lx: 0, ly: -0.04, lz: -depth / 2, sx: colW - 0.012, sy: 0.08, sz: 0.09 });
+        for (const lx of [-colW / 2 + 0.07, colW / 2 - 0.07]) foot(facets[k], lx, -0.15, -depth / 2);
+      }
+      const len = Math.min(1.6, Math.max(0.9, H * 0.35)), gap = 0.44, top = H + 0.25, baseY = floor + 0.075;
+      const pos = groundSupports(comp.W).map((u) => u / 1000);
+      pos.forEach((u, i) => {
+        const k = Math.min(C - 1, Math.max(0, Math.floor(u / colW))), f = facets[k], lx = u - (k + 0.5) * colW;
+        const z0 = -depth - 0.06, z1 = z0 - len, end = i === 0 || i === pos.length - 1;
+        for (const dx of [-gap / 2, gap / 2]) items.push({ f, lx: lx + dx, ly: baseY + 0.03, lz: (z0 + z1) / 2, sx: 0.06, sy: 0.06, sz: len });   // H frame: two rails
+        for (const z of [z0 - 0.08, (z0 + z1) / 2, z1 + 0.08]) items.push({ f, lx, ly: baseY + 0.03, lz: z, sx: gap, sy: 0.05, sz: 0.05 });       // and the cross bars
+        for (const dx of [-gap / 2, gap / 2]) for (const z of [z0 - 0.05, z1 + 0.05]) foot(f, lx + dx, floor, z);
+        const postH = top - (baseY + 0.06), zp = z0 - 0.06;
+        items.push({ f, lx, ly: baseY + 0.06 + postH / 2, lz: zp, sx: 0.07, sy: postH, sz: 0.07 });                                             // upright post
+        if (end) {                                                       // at the ends a ladder frame: second upright and rungs
+          const zb = zp - 0.5, rungs = Math.max(2, Math.floor(postH / 0.6));
+          items.push({ f, lx, ly: baseY + 0.06 + postH / 2, lz: zb, sx: 0.06, sy: postH, sz: 0.06 });
+          for (let r = 1; r <= rungs; r++) items.push({ f, lx, ly: baseY + 0.06 + postH * r / (rungs + 1), lz: (zp + zb) / 2, sx: 0.04, sy: 0.04, sz: 0.5 });
+        }
+      });
     }
     if (!items.length) return;
     const geo = new THREE.BoxGeometry(1, 1, 1); disposables.push(geo);
@@ -3523,7 +3864,7 @@ const View3D = (() => {
   function contentKey(project, s, face) {
     const used = [s.panel, s.mix && s.mix.small, s.mix && s.mix.big].map((id) => { const p = getPanel(project, id); return [p.id, p.w, p.h, p.px, p.py, p.wMax, p.wAvg]; });
     const st = project.settings;
-    return JSON.stringify([s.name, s.color, s.sizeMode, s.panel, s.cols, s.rows, s.tw, s.th, s.fit, s.mix, s.shape, s.angle, s.holes, s.data, s.mount, s.mount === 'back' ? s.y : 0, face, used,
+    return JSON.stringify([s.name, s.color, s.sizeMode, s.panel, s.cols, s.rows, s.tw, s.th, s.fit, s.mix, s.shape, s.angle, s.holes, s.data, s.mount, s.mount === 'ground' ? Math.round(num(s.y) || 0) : 0, face, used,
       face === 'data' ? [st.portCapacity, st.portPrefix] : 0, face === 'power' ? [st.voltage, st.circuitAmps, st.loadFactor, st.powerFactor, st.powerBasis] : 0]);
   }
 
@@ -3713,12 +4054,40 @@ const Store = (() => {
   }
   function localLast() { return LS.get('lwp:last'); }
 
+  /* ---- your panels: one list per viewer, offered in every project ---- */
+  const readJSON = (k, d) => { try { const v = JSON.parse(LS.get(k) || 'null'); return v === null ? d : v; } catch (e) { return d; } };
+  function localLibrary() { const a = readJSON('lwp:library', []); return Array.isArray(a) ? a : []; }
+  let libChain = Promise.resolve();
+  function saveLibrary(panels, { cloud = true } = {}) {
+    const json = JSON.stringify(panels);
+    const ok = LS.set('lwp:library', json);
+    // the account copy is one document; a very long list (over ~1,000 panels) stays in this browser only
+    if (!cloudOK || !cloud || json.length > 240000) return Promise.resolve(ok);
+    libChain = libChain.then(() => col().doc('_library').set({ kind: 'library', panels, updated: new Date().toISOString() })).then(() => true, () => false);
+    return libChain;
+  }
+  async function cloudLibrary() {
+    if (!cloudOK) return null;
+    try { const d = await col().doc('_library').get(); if (!d.exists) return null; const x = d.data() || {}; return Array.isArray(x.panels) ? x.panels : null; } catch (e) { return null; }
+  }
+  // the last panel list read from the site (panels.xlsx next to the planner), so it also works offline
+  function siteCache() { const v = readJSON('lwp:site', null); return v && Array.isArray(v.panels) ? v : null; }
+  function saveSiteCache(v) { if (v) LS.set('lwp:site', JSON.stringify(v)); else LS.del('lwp:site'); }
+  // custom panels inside the projects saved in this browser (to start the list from them once)
+  function localCatalogs() {
+    const out = [];
+    for (const x of localIndex()) { try { const r = JSON.parse(LS.get('lwp:proj:' + x.id) || 'null'); if (r && Array.isArray(r.catalog)) out.push(...r.catalog); } catch (e) { /* skip */ } }
+    return out;
+  }
+  const flag = (k, v) => (v === undefined ? LS.get('lwp:flag:' + k) === '1' : LS.set('lwp:flag:' + k, v ? '1' : '0'));
+
   return { initCloud, save, list, load, loadCloud, remove, setLast, cloudLast, localLast, localLoad, probeLocal,
+    localLibrary, saveLibrary, cloudLibrary, siteCache, saveSiteCache, localCatalogs, flag,
     mode, onChange: (f) => { listeners.add(f); f(state, mode(), lastError); }, get state() { return state; } };
 })();
 
 const Prefs = {
-  data: { theme: 'system', mode: 'pro', grid: true, labels: true, dims: true, planMode: 'data', planDims: true, planLabels: true, face: 'cabinets', person: true },
+  data: { theme: 'system', mode: 'pro', grid: true, labels: true, dims: true, planMode: 'data', planDims: true, planLabels: true, face: 'cabinets', person: true, sf: null },
   load() { try { Object.assign(this.data, JSON.parse(localStorage.getItem('lwp:prefs') || '{}')); } catch (e) { /* defaults */ } return this.data; },
   save() { try { localStorage.setItem('lwp:prefs', JSON.stringify(this.data)); } catch (e) { /* ignore */ } },
 };
@@ -3866,7 +4235,7 @@ function screenSpecs(project, s, c) {
     ['Position', `Centre ${fmtM(s.x, 2)} m from CL, bottom ${fmtM(s.y, 2)} m above floor${s.z ? `, ${fmtM(s.z, 2)} m forward` : ''}${s.yaw ? `, yaw ${fmtNum(s.yaw, 1)}°` : ''}`],
     ['Weight', `${fmtKg(c.weight)}${typicalNote(c)}, cabinets only`],
     ['Mounting', MOUNTS[c.support.mount].long],
-    ['Load per metre', c.support.kgPerM === null ? 'no data' : `${fmtInt(c.support.kgPerM)} kg per metre ${{ flown: 'along the flying bars', ground: 'along the base', back: 'of width on the back construction' }[c.support.mount]}`],
+    ['Load per metre', c.support.kgPerM === null ? 'no data' : `${fmtInt(c.support.kgPerM)} kg per metre ${{ flown: 'along the flying bars', ground: 'along the base beams' }[c.support.mount]}`],
     ['Heaviest column', c.heaviestCol ? `${fmtKg(c.heaviestCol.kg)} (column ${colLetter(c.heaviestCol.col)})${c.support.mount === 'ground' ? `, tallest column ${c.support.tallest.cabinets} cabinet${c.support.tallest.cabinets === 1 ? '' : 's'} high` : ''}` : 'no data'],
     ['Centre of gravity', c.support.cog === null ? 'no data' : `${fmtM(c.support.cog, 2)} m above the floor`],
     ['Front area (wind)', `${fmtNum(c.support.frontArea, 2)} m²${c.curve ? `, ${fmtM(c.support.projW, 2)} m wide seen from the front` : ''}`],
@@ -4180,7 +4549,49 @@ const S = {
   undo: [], redo: [], lastSnap: '', lastKey: '', lastTime: 0,
   pal: {}, dark: true, guides: [],
   saveTimer: 0, pristine: true, fresh: false, lastSetId: '', suggOpen: false,
+  libNote: '', libPrune: [],
 };
+
+/* ---------- your panels ----------
+   own: panels added here, by hand or from a spreadsheet; saved in this browser (and in the viewer's
+   account when there is one). site: panels.xlsx (or panels.csv) next to the planner, e.g. in its GitHub
+   repository, read each time the planner opens and kept for offline use. Both show in every panel list.
+   A project keeps its own copy of each panel it uses, so its project file works anywhere. */
+const cmpText = (a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base', numeric: true });
+const byBrandModel = (a, b) => cmpText(a.brand || '\uffff', b.brand || '\uffff') || cmpText(a.model || a.name, b.model || b.name);
+const Lib = {
+  own: [], site: null, subs: new Set(),
+  load() {
+    const seen = new Set();
+    this.own = Store.localLibrary().map((c) => { try { return normalizePanel(c); } catch (e) { return null; } }).filter((p) => p && !seen.has(p.id) && seen.add(p.id));
+    const site = Store.siteCache();
+    this.site = site ? Object.assign({}, site, { panels: site.panels.map(normalizePanel) }) : null;
+  },
+  all() { const ids = new Set(this.own.map((p) => p.id)); return [...this.own, ...((this.site && this.site.panels) || []).filter((p) => !ids.has(p.id))]; },
+  find(id) { return this.own.find((p) => p.id === id) || (this.site && this.site.panels.find((p) => p.id === id)) || null; },
+  isOwn(id) { return this.own.some((p) => p.id === id); },
+  isSite(id) { return !this.isOwn(id) && !!(this.site && this.site.panels.some((p) => p.id === id)); },
+  saveOwn() { this.own.sort(byBrandModel); Store.saveLibrary(this.own); this.emit(); },
+  upsert(p) { const i = this.own.findIndex((x) => x.id === p.id); if (i >= 0) this.own[i] = p; else this.own.push(p); this.saveOwn(); },
+  remove(id) { this.own = this.own.filter((x) => x.id !== id); this.saveOwn(); },
+  setSite(v) { this.site = v; Store.saveSiteCache(v); this.emit(); },
+  brands() { return [...new Set(this.all().map((p) => p.brand).filter(Boolean))].sort(cmpText); },
+  on(fn) { this.subs.add(fn); return () => this.subs.delete(fn); },
+  emit() { for (const f of [...this.subs]) { try { f(); } catch (e) { console.error(e); } } },
+};
+// a project keeps a copy of every panel its screens use; copies of list panels no screen uses are dropped
+function adoptPanels(p) {
+  const used = new Set();
+  for (const s of p.screens) { used.add(s.panel); if (s.mix) { used.add(s.mix.small); used.add(s.mix.big); } }
+  for (const id of used) { if (findPanel(p, id)) continue; const lp = Lib.find(id); if (lp) p.catalog.push(deepClone(lp)); }
+  p.catalog = p.catalog.filter((c) => used.has(c.id) || !Lib.find(c.id));
+}
+// cabinets of one panel across the whole project, for the stock check
+function projectUse(id) {
+  let n = 0;
+  for (const s of S.project.screens) { const c = S.comps[s.id]; if (c) for (const b of Object.values(c.byPanel)) if (b.panel.id === id) n += b.count; }
+  return n;
+}
 
 /* ---------- toasts ---------- */
 function toast(msg, action) {
@@ -4236,6 +4647,7 @@ function findScreen(id) { return S.project.screens.find((s) => s.id === id) || n
 
 function change(fn, { key = '', structural = false, history = true } = {}) {
   fn(S.project);
+  adoptPanels(S.project);
   S.project.updated = new Date().toISOString();
   if (S.project.example) delete S.project.example;
   S.pristine = false; S.fresh = false;
@@ -4325,7 +4737,10 @@ function fitStage() {
   S.view.fitted = true; S.view.touched = false;
 }
 function renderStage() {
-  const empty = $('#stage-empty'); if (empty) empty.hidden = S.project.screens.length > 0;
+  // no screens: the start card shows, and the stage grows to fit it
+  const none = S.project.screens.length === 0, empty = $('#stage-empty');
+  if (empty) empty.hidden = !none;
+  $('#stage-wrap').classList.toggle('is-empty', none);
   const svg = $('#stage-svg'); const { w, h } = stageSize(); if (w < 20 || h < 20) return;
   if (!S.view.fitted) fitStage();
   const pen = new SvgPen();
@@ -4376,10 +4791,16 @@ function syncPropsValues() {
 
 /* ----- configuration cards ----- */
 function segBtn(v, label, cur, cls = '') { return `<button data-v="${v}" aria-pressed="${cur === v}"${cls ? ` class="${cls}"` : ''}>${label}</button>`; }
+// your panels first, one group per brand; then panels only this project has; then the generic presets
 function panelOptions(selected) {
-  const opt = (p) => `<option value="${esc(p.id)}"${p.id === selected ? ' selected' : ''}>${esc(p.name)}</option>`;
-  const custom = S.project.catalog || [];
-  return `<optgroup label="Generic presets">${BUILTIN_PANELS.map(opt).join('')}</optgroup>${custom.length ? `<optgroup label="Your panels">${custom.map(opt).join('')}</optgroup>` : ''}`;
+  const proj = (S.project && S.project.catalog) || [];
+  const opt = (p) => `<option value="${esc(p.id)}"${p.id === selected ? ' selected' : ''}>${esc((proj.find((c) => c.id === p.id) || p).name)}</option>`;
+  const lib = Lib.all(), groups = new Map();
+  for (const p of [...lib].sort(byBrandModel)) { const b = p.brand || ''; if (!groups.has(b)) groups.set(b, []); groups.get(b).push(p); }
+  let html = [...groups].map(([b, list]) => `<optgroup label="${esc(b || 'Your panels')}">${list.map(opt).join('')}</optgroup>`).join('');
+  const ids = new Set(lib.map((p) => p.id)), only = proj.filter((p) => !ids.has(p.id));
+  if (only.length) html += `<optgroup label="This project only">${only.map(opt).join('')}</optgroup>`;
+  return html + `<optgroup label="Generic presets">${BUILTIN_PANELS.map(opt).join('')}</optgroup>`;
 }
 const CORNER_NAMES = { bl: 'bottom left', br: 'bottom right', tl: 'top left', tr: 'top right' };
 function cornerBtn(k, cur, dir) {
@@ -4414,7 +4835,7 @@ function renderCfg() {
   if (!s) { box.innerHTML = ''; return; }
   const d = s.data;
   box.innerHTML = `
-  <div class="card"><div class="card-head"><h3><span class="step">1</span>Panel</h3><div class="tools"><button class="btn sm" data-act="panel-new"><svg class="ico"><use href="#i-plus"/></svg>Custom panel</button></div></div>
+  <div class="card"><div class="card-head"><h3><span class="step">1</span>Panel</h3><div class="tools"><button class="btn sm" data-act="panels">Your panels</button><button class="btn sm" data-act="panel-new"><svg class="ico"><use href="#i-plus"/></svg>New panel</button></div></div>
     <div class="card-body">
       ${s.sizeMode === 'mix' ? '<div class="desc">Mixed mode uses the two panels chosen under Size.</div>' : `<select id="cf-panel" data-bind="panel" data-type="str" aria-label="Panel model">${panelOptions(s.panel)}</select>`}
       <div class="desc" data-ro="panel"></div>
@@ -4466,11 +4887,21 @@ function shortName(p) { return p.name.replace(/^Generic /, ''); }
 const RO = {
   panel(s) {
     if (s.sizeMode === 'mix') return '';
-    const p = getPanel(S.project, s.panel);
-    const tail = p.builtin
-      ? `<br><span style="color:var(--ink-3)">Generic preset with typical weight and power.</span> <button class="linkbtn" data-act="panel-copy">Copy as custom panel</button>`
-      : `<br><button class="linkbtn" data-act="panel-edit">Edit this panel</button>`;
-    return `<b>${fmtNum(p.w, 1)} × ${fmtNum(p.h, 1)} mm</b> · ${p.px} × ${p.py} px · pitch <b>${fmtPitch(p)} mm</b><br>${p.kg !== null ? fmtNum(p.kg, 1) + ' kg' : 'weight not set'} · ${p.wMax !== null ? fmtInt(p.wMax) + ' W max' : 'power not set'}${p.wAvg !== null ? ' · ' + fmtInt(p.wAvg) + ' W typical' : ''}${tail}`;
+    const p = getPanel(S.project, s.panel), lp = p.builtin ? null : Lib.find(p.id);
+    let t = `<b>${fmtNum(p.w, 1)} × ${fmtNum(p.h, 1)} mm</b> · ${p.px} × ${p.py} px · pitch <b>${fmtPitch(p)} mm</b><br>${p.kg !== null ? fmtNum(p.kg, 1) + ' kg' : 'weight not set'} · ${p.wMax !== null ? fmtInt(p.wMax) + ' W max' : 'power not set'}${p.wAvg !== null ? ' · ' + fmtInt(p.wAvg) + ' W typical' : ''}`;
+    if (p.builtin) return t + `<br><span class="mut">Generic preset with typical weight and power.</span> <button class="linkbtn" data-act="panel-copy">Save as your panel</button>`;
+    const own = Lib.isOwn(p.id), site = Lib.isSite(p.id);
+    const acts = [own || !lp ? '<button class="linkbtn" data-act="panel-edit">Edit</button>' : '', !lp ? '<button class="linkbtn" data-act="panel-keep">Add to your panels</button>' : ''].filter(Boolean);
+    t += `<br><span class="mut">${own ? 'In your panels' : site ? `From ${esc(Lib.site.file)}` : 'Only in this project'}</span>${acts.length ? ' · ' + acts.join(' · ') : ''}`;
+    if (lp && !samePanel(p, lp)) t += `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${own ? 'Your panels have' : `${esc(Lib.site.file)} has`} other values for this panel than this project. <button class="linkbtn" data-act="panel-update">Use the new values</button></span></div>`;
+    const stock = lp ? lp.stock : p.stock;
+    if (stock !== null && stock !== undefined) {
+      const used = projectUse(p.id);
+      t += used > stock
+        ? `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>This project needs ${fmtInt(used)} of this panel, ${fmtInt(used - stock)} more than the ${fmtInt(stock)} in stock.</span></div>`
+        : `<br>Stock <b>${fmtInt(stock)}</b> · this project uses ${fmtInt(used)}`;
+    }
+    return t;
   },
   curve(s, c) {
     if (!c.curve) return ''; const k = c.curve;
@@ -4496,12 +4927,13 @@ const RO = {
   warn(s, c) { return c.warnings.map((w) => `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>${esc(w)}</span></div>`).join(''); },
   mount(s, c) {
     const k = c.support, m = k.mount;
-    const along = { flown: 'along the flying bars', ground: 'along the base', back: 'across the back construction' }[m];
+    const along = { flown: 'along the flying bars', ground: 'along the base beams' }[m];
     const area = `front area ${fmtNum(k.frontArea, 2)} m²${c.curve ? ` (${fmtM(k.projW, 2)} m wide seen from the front)` : ''}`;
     let t = c.weight === null
       ? `Add a weight to the panel to see the loads · ${area}`
-      : `<b>${{ flown: 'Hanging weight', ground: 'Weight on the base', back: 'Weight on the back construction' }[m]} ${fmtKg(c.weight)}</b> · ${fmtInt(k.kgPerM)} kg per metre ${along} · heaviest column ${fmtKg(c.heaviestCol.kg)}${m === 'ground' ? ` (${k.tallest.cabinets} cabinet${k.tallest.cabinets === 1 ? '' : 's'} high)` : ''} · centre of gravity ${fmtM(k.cog, 2)} m above the floor · ${area}`;
-    t += `<br>Build order: ${buildOrderText(m)}.<br><span style="color:var(--ink-3)">Cabinets only: flying bars, frames, cables and wind add to these. Have the rigging or structure designed and checked by a qualified person.</span>`;
+      : `<b>${{ flown: 'Hanging weight', ground: 'Weight on the base' }[m]} ${fmtKg(c.weight)}</b> · ${fmtInt(k.kgPerM)} kg per metre ${along} · heaviest column ${fmtKg(c.heaviestCol.kg)}${m === 'ground' ? ` (${k.tallest.cabinets} cabinet${k.tallest.cabinets === 1 ? '' : 's'} high)` : ''} · centre of gravity ${fmtM(k.cog, 2)} m above the floor · ${area}`;
+    if (m === 'ground') t += `<br>${c.cols} ground beam${c.cols === 1 ? '' : 's'} with adjustable feet, ${groundSupports(c.W).length} rear supports (posts on H-frame bases) at both ends and about every 2 m`;
+    t += `<br>Build order: ${buildOrderText(m)}.<br><span style="color:var(--ink-3)">Cabinets only: ${m === 'flown' ? 'flying bars, chains' : 'ground beams, supports'}, cables and wind add to these. Have the rigging or structure designed and checked by a qualified person.</span>`;
     return t;
   },
   data(s, c) {
@@ -4510,7 +4942,7 @@ const RO = {
   },
   power(s, c) {
     const st = S.project.settings;
-    if (!c.power) return 'Circuits need power values on the panel. Make a custom panel with your datasheet figures.';
+    if (!c.power) return 'Circuits need power values on the panel. Add your panel with its datasheet figures (New panel).';
     return `<b>${c.power.circuits.length} power circuit${c.power.circuits.length === 1 ? '' : 's'}</b> of ${fmtInt(st.circuitAmps)} A at ${fmtInt(st.voltage)} V, loaded to ${Math.round(st.loadFactor * 100)}% at power factor ${fmtNum(st.powerFactor, 2)} (${fmtInt(c.power.circuitW)} W each). Chains follow the data path.`;
   },
 };
@@ -4553,7 +4985,7 @@ function legendHtml(mode, s, c) {
       <div class="lg-grid${st.backup ? ' wide' : ''}">${c.ports.map((p) => { const pct = p.load / p.cap; const f = p.cells[0], l = p.cells[p.cells.length - 1]; return `<div class="lg"><span class="dot" style="background:${p.color}"></span><span class="name">${esc(p.label)}</span><span class="bar"><i style="width:${Math.min(100, pct * 100).toFixed(1)}%;background:${p.color}"></i></span><span class="val">${p.count} cab · in ${colLetter(f.c)}${f.r + 1}${st.backup ? ` · BK ${colLetter(l.c)}${l.r + 1}` : ''} · ${Math.round(pct * 100)}%</span></div>`; }).join('')}</div>`;
   }
   if (mode === 'power') {
-    if (!c.power) return '<div class="sum">Power circuits need weight and power values on the panel. Use <b>Custom panel</b> to enter your datasheet figures.</div>';
+    if (!c.power) return '<div class="sum">Power circuits need weight and power values on the panel. Use <b>New panel</b> to enter your datasheet figures.</div>';
     return `<div class="sum"><b>${c.power.circuits.length} circuit${c.power.circuits.length === 1 ? '' : 's'}</b> of ${fmtInt(st.circuitAmps)} A at ${fmtInt(st.voltage)} V · ${fmtInt(c.power.circuitW)} W each at ${Math.round(st.loadFactor * 100)}% load and PF ${fmtNum(st.powerFactor, 2)} · sized on ${st.powerBasis === 'avg' ? 'typical' : 'maximum'} power</div>
       <div class="lg-grid">${c.power.circuits.map((k) => { const pct = k.load / k.cap; return `<div class="lg"><span class="dot" style="background:${k.color}"></span><span class="name">${k.label}</span><span class="bar"><i style="width:${Math.min(100, pct * 100).toFixed(1)}%;background:${k.color}"></i></span><span class="val">${k.count} cab · ${fmtInt(k.load)} W · ${fmtNum(k.amps, 1)} A</span></div>`; }).join('')}</div>`;
   }
@@ -4596,22 +5028,144 @@ function setActive(id, select = true) {
   S.activeId = id; if (select) S.selection = new Set([id]);
   renderTabs(); renderProps(); renderCfg(); renderResults(); renderPlan(); renderStage();
 }
+// where a new screen goes, by its type: a DJ booth front 2 m forward on the floor, a banner above the
+// first screen, a side screen beside the others with its top level with the first screen's top
+function placeByKind(p, s, comp, kind) {
+  const first = p.screens.find((x) => x.id !== s.id), fc = first ? (S.comps[first.id] || computeScreen(p, first)) : null;
+  if (kind === 'dj') { s.x = 0; s.y = 0; s.z = 2000; }
+  else if (kind === 'banner' && first) { s.x = first.x; s.y = Math.round((first.y + fc.H + 300) / 50) * 50; }
+  else { placeNewScreen(p, s, comp); if (kind === 'side' && first) s.y = Math.max(0, Math.round((first.y + fc.H - comp.H) / 50) * 50); if (kind === 'main' && !first) s.y = 1000; }
+}
 function addScreen(kind) {
   const k = KINDS[kind] || KINDS.free;
   const s = defaultScreen(kind);
   s.color = nextColor(S.project);
   s.name = uniqueName(S.project, kind === 'main' ? 'Main screen' : k.label);
   const comp = computeScreen(S.project, s);
-  const first = S.project.screens[0], fc = first ? S.comps[first.id] : null;
   change((p) => {
-    p.screens.push(s);
-    if (kind === 'dj') { s.x = 0; s.y = 0; s.z = 2000; }
-    else if (kind === 'banner' && first) { s.x = first.x; s.y = Math.round((first.y + fc.H + 300) / 50) * 50; }
-    else { placeNewScreen(p, s, comp); if (kind === 'side' && first) s.y = Math.max(0, Math.round((first.y + fc.H - comp.H) / 50) * 50); if (kind === 'main' && !first) s.y = 1000; }
+    p.screens.push(s); placeByKind(p, s, comp, kind);
     S.activeId = s.id; S.selection = new Set([s.id]);
   }, { structural: true });
   S.view.fitted = false; renderStage();
   toast(`Added ${s.name}`, { label: 'Undo', run: undo });
+}
+
+/* ---------- a screen of your own size: the start card, and Add screen › Your own size ----------
+   The panel (your panels included), width × height in metres (nearest whole cabinets) or in cabinets,
+   and the mounting. The last choices are remembered for the next project. */
+// the project, plus a panel from your panels that it has no copy of yet (for working out a size first)
+function projectWith(id) {
+  const lp = Lib.find(id);
+  return lp && !findPanel(S.project, id) ? Object.assign({}, S.project, { catalog: [...S.project.catalog, lp] }) : S.project;
+}
+function sizeFormHtml(kinds) {
+  return `<div class="sf">
+    ${kinds ? `<label class="fld"><span>Type</span><select data-sf="kind">${KIND_ORDER.map((k) => `<option value="${k}">${KINDS[k].label}</option>`).join('')}</select></label>` : ''}
+    <label class="fld"><span>Panel</span><select data-sf="panel"></select></label>
+    <div class="sf-links"><button type="button" class="linkbtn" data-sf-act="new">New panel</button><button type="button" class="linkbtn" data-sf-act="lib">Your panels</button></div>
+    <div class="seg full" data-sf="unit" role="group" aria-label="Enter the size in"><button type="button" data-v="m">Metres</button><button type="button" data-v="cab">Cabinets</button></div>
+    <div class="row2">
+      <label class="fld"><span data-sf="wl">Width</span><div class="unit-in"><input type="number" data-sf="w" min="0" step="any"><i data-sf="wu">m</i></div></label>
+      <label class="fld"><span data-sf="hl">Height</span><div class="unit-in"><input type="number" data-sf="h" min="0" step="any"><i data-sf="hu">m</i></div></label>
+    </div>
+    <label class="fld"><span>Mounting</span><select data-sf="mount">${MOUNT_ORDER.map((k) => `<option value="${k}">${MOUNTS[k].label}</option>`).join('')}</select></label>
+    <div class="readout" data-sf="out" aria-live="polite"></div>
+  </div>`;
+}
+function bindSizeForm(root, { kinds = false } = {}) {
+  const q = (k) => root.querySelector(`[data-sf="${k}"]`);
+  const saved = PF.sf || {};
+  const known = (id) => !!(id && (Lib.find(id) || findPanel(S.project, id)));
+  const st = {
+    kind: 'main', panel: known(saved.panel) ? saved.panel : 'g50100-39', unit: saved.unit === 'cab' ? 'cab' : 'm',
+    w: saved.w > 0 ? saved.w : 8, h: saved.h > 0 ? saved.h : 4, cols: saved.cols > 0 ? saved.cols : 16, rows: saved.rows > 0 ? saved.rows : 4,
+    mount: MOUNTS[saved.mount] ? saved.mount : 'flown',
+  };
+  const fillPanels = () => { if (!known(st.panel)) st.panel = 'g50100-39'; const sel = q('panel'); sel.innerHTML = panelOptions(st.panel); sel.value = st.panel; };
+  const screen = () => {
+    const s = defaultScreen(st.kind); s.panel = st.panel; s.mount = st.mount;
+    if (st.unit === 'm') { s.sizeMode = 'meters'; s.tw = st.w; s.th = st.h; s.fit = 'nearest'; } else { s.sizeMode = 'grid'; s.cols = st.cols; s.rows = st.rows; }
+    return s;
+  };
+  const read = () => {
+    const w = parseFloat(String(q('w').value).replace(',', '.')), h = parseFloat(String(q('h').value).replace(',', '.'));
+    if (st.unit === 'm') { if (w > 0) st.w = clamp(w, 0.1, 200); if (h > 0) st.h = clamp(h, 0.1, 100); }
+    else { if (w >= 1) st.cols = clamp(Math.round(w), 1, 200); if (h >= 1) st.rows = clamp(Math.round(h), 1, 100); }
+    return st.unit === 'm' ? w > 0 && h > 0 : w >= 1 && h >= 1;
+  };
+  const show = () => {
+    const m = st.unit === 'm';
+    q('wl').textContent = m ? 'Width' : 'Columns'; q('hl').textContent = m ? 'Height' : 'Rows';
+    q('wu').textContent = m ? 'm' : ''; q('hu').textContent = m ? 'm' : '';
+    for (const [k, v] of [['w', m ? st.w : st.cols], ['h', m ? st.h : st.rows]]) { const el = q(k); el.step = m ? 'any' : '1'; el.inputMode = m ? 'decimal' : 'numeric'; if (document.activeElement !== el) el.value = String(Math.round(v * 1000) / 1000); }
+    root.querySelectorAll('[data-sf="unit"] button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === st.unit)));
+    q('mount').value = st.mount; if (kinds) q('kind').value = st.kind;
+  };
+  const preview = () => {
+    const out = q('out');
+    if (!read()) { out.innerHTML = st.unit === 'm' ? 'Enter the width and height in metres.' : 'Enter the number of columns and rows.'; return null; }
+    const c = computeScreen(projectWith(st.panel), screen()), lp = Lib.find(st.panel);
+    const nb = (x) => x.replace(/ /g, '\u00a0');   // keep "20.5 kW max" on one line
+    let t = `<b>${c.cols} × ${c.rows}</b> cabinets = <b>${fmtSize(c.W, c.H)}</b><br>${nb(fmtRes(c.resW, c.resH) + ' px')} · ${nb(fmtInt(c.count) + ' cabinets')}${c.weight !== null ? ` · ${nb(fmtKg(c.weight))}` : ''}${c.wMax !== null ? ` · ${nb(fmtW(c.wMax) + ' max')}` : ''}`;
+    if (st.unit === 'm' && (Math.abs(c.W - st.w * 1000) > 0.5 || Math.abs(c.H - st.h * 1000) > 0.5)) t += `<br><span class="mut">Nearest whole cabinets to ${fmtSize(st.w * 1000, st.h * 1000)}</span>`;
+    if (lp && lp.stock !== null && c.count > lp.stock) t += `<div class="warnline"><svg class="ico"><use href="#i-warn"/></svg><span>That is ${fmtInt(c.count - lp.stock)} more than the ${fmtInt(lp.stock)} in stock.</span></div>`;
+    out.innerHTML = t;
+    return c;
+  };
+  root.addEventListener('input', (e) => { if (e.target.matches('[data-sf="w"], [data-sf="h"]')) preview(); });
+  root.addEventListener('change', (e) => {
+    const k = e.target.dataset && e.target.dataset.sf;
+    if (k === 'panel') st.panel = e.target.value;
+    if (k === 'mount') st.mount = e.target.value;
+    if (k === 'kind') { st.kind = e.target.value; st.mount = (KINDS[st.kind] || KINDS.free).mount || 'ground'; }
+    if (k === 'w' || k === 'h') read();
+    show(); preview();
+  });
+  root.addEventListener('click', (e) => {
+    const u = e.target.closest('[data-sf="unit"] button');
+    if (u && u.dataset.v !== st.unit) {
+      const c = preview();
+      if (c) { if (u.dataset.v === 'cab') { st.cols = c.cols; st.rows = c.rows; } else { st.w = Math.round(c.W) / 1000; st.h = Math.round(c.H) / 1000; } }
+      st.unit = u.dataset.v; show(); preview(); return;
+    }
+    const a = e.target.closest('[data-sf-act]'); if (!a) return;
+    if (a.dataset.sfAct === 'new') panelModal({ onSaved: (np) => { if (np) { st.panel = np.id; fillPanels(); preview(); } } });
+    if (a.dataset.sfAct === 'lib') panelsModal();
+  });
+  const off = Lib.on(() => { fillPanels(); preview(); });
+  fillPanels(); show(); preview();
+  return {
+    values() { if (!preview()) { toast(st.unit === 'm' ? 'Enter the width and height in metres.' : 'Enter the number of columns and rows.'); return null; } return Object.assign({}, st); },
+    refresh() { fillPanels(); preview(); }, off,
+  };
+}
+function addSizedScreen(v) {
+  const kind = v.kind || 'main';
+  const s = defaultScreen(kind);
+  s.panel = v.panel; s.mount = v.mount;
+  if (v.unit === 'm') { s.sizeMode = 'meters'; s.tw = v.w; s.th = v.h; s.fit = 'nearest'; } else { s.sizeMode = 'grid'; s.cols = v.cols; s.rows = v.rows; }
+  s.color = nextColor(S.project);
+  s.name = uniqueName(S.project, kind === 'main' ? 'Main screen' : (KINDS[kind] || KINDS.free).label);
+  const comp = computeScreen(projectWith(v.panel), s);
+  const first = S.project.screens[0];
+  change((p) => {
+    p.screens.push(s); placeByKind(p, s, comp, kind);
+    // a ground stack stands on the floor; a flown screen hangs level with the first flown screen, or 1 m up
+    if (s.mount === 'ground') s.y = 0;
+    else if (s.y === 0 && kind !== 'dj') s.y = first && first.mount === 'flown' ? first.y : 1000;
+    S.activeId = s.id; S.selection = new Set([s.id]);
+  }, { structural: true });
+  PF.sf = { panel: v.panel, unit: v.unit, w: v.w, h: v.h, cols: v.cols, rows: v.rows, mount: v.mount }; Prefs.save();
+  S.view.fitted = false; renderStage();
+  toast(`Added ${s.name}`, { label: 'Undo', run: undo });
+}
+function sizeModal() {
+  const m = openModal({ title: 'Add a screen', body: `<form class="sf-form" novalidate>${sizeFormHtml(true)}<button type="submit" hidden></button></form>`, foot: [
+    { label: 'Cancel', run: (close) => close() },
+    { label: 'Add screen', cls: 'primary', run: (close) => { const v = form.values(); if (v) { close(); addSizedScreen(v); } } },
+  ], onClose: () => form.off() });
+  const form = bindSizeForm(m.body, { kinds: true });
+  $('form', m.body).addEventListener('submit', (e) => { e.preventDefault(); const v = form.values(); if (v) { m.close(); addSizedScreen(v); } });
 }
 function mirrorName(n) {
   const sw = (m) => ({ left: 'right', right: 'left', Left: 'Right', Right: 'Left', LEFT: 'RIGHT', RIGHT: 'LEFT' }[m] || m);
@@ -4822,7 +5376,7 @@ function renderAddMenu() {
   $('#add-menu').innerHTML = KIND_ORDER.map((k) => {
     const d = KINDS[k], p = getPanel(S.project, d.panel);
     return `<button data-kind="${k}"><b>${d.label}</b><span>${d.cols} × ${d.rows} of ${esc(shortName(p))} · ${fmtSize(d.cols * p.w, d.rows * p.h)}${d.shape ? ' · curved' : ''}</span></button>`;
-  }).join('');
+  }).join('') + '<button data-custom><b>Your own size…</b><span>Any panel, including yours, at the width and height you need</span></button>';
 }
 function renderExportMenu() {
   const ok = Downloads.available(); const s = active(); const c = s ? S.comps[s.id] : null;
@@ -4849,14 +5403,18 @@ function bindAll() {
   // empty stage: one tap adds a first screen, or opens the example project
   $('#empty-kinds').innerHTML = KIND_ORDER.map((k) => { const d = KINDS[k], pn = getPanel(null, d.panel); return `<button class="chip" data-kind="${k}"><b>${d.label}</b><span>${d.cols} × ${d.rows} · ${fmtSize(d.cols * pn.w, d.rows * pn.h)}</span></button>`; }).join('');
   $('#empty-kinds').addEventListener('click', (e) => { const b = e.target.closest('[data-kind]'); if (b) addScreen(b.dataset.kind); });
+  $('#start-fields').innerHTML = sizeFormHtml(false);
+  const startForm = bindSizeForm($('#start-fields'));
+  $('#start-form').addEventListener('submit', (e) => { e.preventDefault(); const v = startForm.values(); if (v) addSizedScreen(v); });
   $('#btn-example').onclick = openExample;
+  $('#file-panels').addEventListener('change', async (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) await importPanels(f); });
   $('#btn-import').onclick = () => $('#file-import').click();
   $('#file-import').addEventListener('change', importFile);
   $('#btn-settings').onclick = settingsModal;
   $('#btn-export').onclick = (e) => { e.stopPropagation(); renderExportMenu(); toggleMenu(e.currentTarget, $('#export-menu')); };
   $('#export-menu').addEventListener('click', (e) => { const b = e.target.closest('[data-exp]'); if (!b || b.disabled) return; closeMenus(); runExport(b.dataset.exp); });
   $('#btn-add').onclick = (e) => { e.stopPropagation(); renderAddMenu(); toggleMenu(e.currentTarget, $('#add-menu')); };
-  $('#add-menu').addEventListener('click', (e) => { const b = e.target.closest('[data-kind]'); if (!b) return; closeMenus(); addScreen(b.dataset.kind); });
+  $('#add-menu').addEventListener('click', (e) => { const b = e.target.closest('[data-kind], [data-custom]'); if (!b) return; closeMenus(); if (b.dataset.kind) addScreen(b.dataset.kind); else sizeModal(); });
   document.addEventListener('click', (e) => { if (!e.target.closest('.menu-wrap')) closeMenus(); });
   $$('#mode-seg button').forEach((b) => b.onclick = () => { PF.mode = b.dataset.mode; Prefs.save(); applyMode(); renderAll(); });
   $('#btn-theme').onclick = () => { PF.theme = S.dark ? 'light' : 'dark'; Prefs.save(); applyTheme(); View3D.invalidate(); renderAll(); };
@@ -4903,9 +5461,12 @@ function bindAll() {
     if (sg) { const [cc, rr] = sg.dataset.sugg.split('x').map(Number); change(() => { s.cols = cc; s.rows = rr; s.holes = []; }, { structural: true }); toast(`Set to ${cc} × ${rr}`, { label: 'Undo', run: undo }); return; }
     const act = e.target.closest('[data-act]'); if (!act) return;
     const a = act.dataset.act;
-    if (a === 'panel-new') panelModal(null, null);
-    if (a === 'panel-copy') panelModal(null, getPanel(S.project, s.panel));
-    if (a === 'panel-edit') panelModal(getPanel(S.project, s.panel), null);
+    if (a === 'panels') panelsModal();
+    if (a === 'panel-new') panelModal({ use: true });
+    if (a === 'panel-copy') panelModal({ template: getPanel(S.project, s.panel), use: true });
+    if (a === 'panel-edit') { const p = getPanel(S.project, s.panel); if (Lib.isOwn(p.id)) panelModal({ existing: Lib.find(p.id) }); else panelModal({ existing: p, projectOnly: true }); }
+    if (a === 'panel-keep') { const p = getPanel(S.project, s.panel); Lib.upsert(normalizePanel(p)); toast(`Added ${p.name} to your panels`); }
+    if (a === 'panel-update') { const lp = Lib.find(s.panel); if (lp) { change((pp) => { pp.catalog = pp.catalog.map((c) => (c.id === lp.id ? deepClone(lp) : c)); }, { structural: true }); toast(`Updated ${lp.name} in this project`, { label: 'Undo', run: undo }); } }
     if (a === 'holes-clear') change(() => { s.holes = []; }, { structural: false });
     if (a === 'settings') settingsModal();
   });
@@ -4955,7 +5516,8 @@ function openModal({ title, body, foot, wide, onClose }) {
   if (typeof body === 'string') bodyEl.innerHTML = body; else if (body) bodyEl.appendChild(body);
   const prev = document.activeElement;
   const close = () => { back.remove(); document.removeEventListener('keydown', onKey, true); if (onClose) onClose(); if (prev && prev.focus) prev.focus(); };
-  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  // Escape closes the top dialog only (a panel dialog can open over the panel list)
+  const onKey = (e) => { if (e.key === 'Escape' && $('#modal-root').lastElementChild === back) { e.stopPropagation(); close(); } };
   if (foot) { const f = back.querySelector('.modal-foot'); for (const b of foot) { if (!b) continue; const btn = document.createElement('button'); btn.className = 'btn ' + (b.cls || ''); btn.textContent = b.label; if (b.id) btn.id = b.id; if (b.disabled) btn.disabled = true; btn.onclick = () => b.run(close, btn); f.appendChild(btn); } }
   back.addEventListener('pointerdown', (e) => { if (e.target === back) close(); });
   back.querySelector('[data-close]').onclick = close;
@@ -5021,6 +5583,11 @@ async function duplicateProject() {
 async function importFile(e) {
   const f = e.target.files && e.target.files[0]; e.target.value = '';
   if (!f) return;
+  // a spreadsheet is a panel list, not a project
+  const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
+  if (/\.(xlsx|xls|csv|tsv|txt)$/i.test(f.name) || (head[0] === 0x50 && head[1] === 0x4B) || (head[0] === 0xD0 && head[1] === 0xCF)) {
+    panelsModal(); await importPanels(f); return;
+  }
   try {
     const raw = JSON.parse(await f.text());
     const p = normalizeProject(raw);
@@ -5099,53 +5666,219 @@ function settingsModal() {
   m.body.addEventListener('change', (e) => { if (e.target.dataset.sb) apply(e.target, true); });
 }
 
-function panelModal(existing, template) {
+// a panel of your own: new, from a template, or editing one (in your panels, or one only this project has)
+function panelModal({ existing = null, template = null, use = false, onSaved = null, projectOnly = false } = {}) {
   const base = existing || template;
-  const p = base ? Object.assign({}, base) : { name: 'My panel', w: 500, h: 500, px: 128, py: 128, kg: 8.5, wMax: 180, wAvg: 60 };
-  if (!existing && template) p.name = `${template.name.replace(/^Generic /, '')} (my copy)`;
-  const used = existing ? S.project.screens.filter((s) => s.panel === existing.id || (s.sizeMode === 'mix' && (s.mix.small === existing.id || s.mix.big === existing.id))).length : 0;
-  const f = (k, label, step, unit, t = 'num') => `<label class="fld"><span>${label}</span><div class="unit-in"><input type="number" data-pk="${k}" data-t="${t}" step="${step}" min="0" value="${p[k] === null || p[k] === undefined ? '' : p[k]}"><i>${unit}</i></div></label>`;
+  const p = base ? Object.assign({}, base) : { brand: '', model: '', w: 500, h: 500, px: 128, py: 128, kg: 8.5, wMax: 180, wAvg: 60, stock: null };
+  if (!existing && template) { p.brand = template.builtin ? '' : template.brand; p.model = template.builtin ? template.name.replace(/^Generic /, '') : template.model; p.stock = null; }
+  const usedBy = existing && projectOnly ? S.project.screens.filter((s) => s.panel === existing.id || (s.sizeMode === 'mix' && (s.mix.small === existing.id || s.mix.big === existing.id))).length : 0;
+  const f = (k, label, step, unit, t = 'num') => `<label class="fld"><span>${label}</span><div class="unit-in"><input type="number" data-pk="${k}" data-t="${t}" step="${step}" min="0" inputmode="decimal" value="${p[k] === null || p[k] === undefined ? '' : p[k]}"><i>${unit}</i></div></label>`;
   const body = `
-    <label class="fld"><span>Name</span><input type="text" data-pk="name" value="${esc(p.name)}" maxlength="80"></label>
+    <div class="mgrid two">
+      <label class="fld"><span>Brand</span><input type="text" data-pk="brand" value="${esc(p.brand || '')}" maxlength="40" list="pk-brands" placeholder="Manufacturer" autocomplete="off"></label>
+      <label class="fld"><span>Model</span><input type="text" data-pk="model" value="${esc(p.model || p.name || '')}" maxlength="80" autocomplete="off"></label>
+    </div><datalist id="pk-brands">${Lib.brands().map((b) => `<option value="${esc(b)}"></option>`).join('')}</datalist>
     <div class="msec"><h4>Cabinet</h4><div class="mgrid">${f('w', 'Width', 0.5, 'mm')}${f('h', 'Height', 0.5, 'mm')}${f('px', 'Pixels across', 1, 'px', 'int')}${f('py', 'Pixels down', 1, 'px', 'int')}</div></div>
     <div class="msec"><h4>Weight and power (from the datasheet)</h4><div class="mgrid">${f('kg', 'Weight', 0.1, 'kg')}${f('wMax', 'Max power', 1, 'W')}${f('wAvg', 'Typical power', 1, 'W')}</div>
     <div class="desc">Leave a value empty if you do not know it; totals that need it will show as no data.</div></div>
-    <div class="readout" id="pk-out"></div>`;
-  const m = openModal({ title: existing ? 'Edit panel' : 'New custom panel', body, foot: [
-    existing ? { label: used ? `Used by ${used} screen${used === 1 ? '' : 's'}` : 'Delete panel', cls: 'danger', disabled: !!used, run: (close, btn) => {
+    ${projectOnly ? '' : `<div class="msec"><h4>Stock</h4><div class="mgrid">${f('stock', 'Cabinets you have', 1, 'pcs', 'int')}</div><div class="desc">Optional. The planner warns when a project needs more than this.</div></div>`}
+    <div class="readout" id="pk-out"></div>
+    ${existing && !projectOnly ? '<div class="desc">Changes apply to your panels and to this project. Other saved projects keep the values they were planned with until you choose Use the new values there.</div>' : ''}`;
+  const s0 = active();
+  const m = openModal({ title: existing ? 'Edit panel' : 'New panel', body, foot: [
+    existing && !projectOnly ? { label: 'Remove from your panels', cls: 'danger', run: (close, btn) => {
+      if (!btn.classList.contains('armed')) { btn.classList.add('armed'); btn.textContent = 'Confirm remove'; return; }
+      const was = Lib.find(existing.id); Lib.remove(existing.id); close();
+      toast(`Removed ${existing.name} from your panels`, { label: 'Undo', run: () => { if (was) Lib.upsert(was); } });
+      if (onSaved) onSaved(null);
+    } } : null,
+    existing && projectOnly ? { label: usedBy ? `Used by ${usedBy} screen${usedBy === 1 ? '' : 's'}` : 'Delete panel', cls: 'danger', disabled: !!usedBy, run: (close, btn) => {
       if (!btn.classList.contains('armed')) { btn.classList.add('armed'); btn.textContent = 'Confirm delete'; return; }
       change((pp) => { pp.catalog = pp.catalog.filter((c) => c.id !== existing.id); }, { structural: true }); close(); toast('Panel deleted', { label: 'Undo', run: undo });
     } } : null,
     { label: 'Cancel', run: (close) => close() },
-    { label: existing ? 'Save panel' : 'Add and use', cls: 'primary', run: (close) => {
-      const vals = read();
-      if (!vals.name.trim()) { toast('Give the panel a name.'); return; }
-      if (!(vals.w > 0 && vals.h > 0 && vals.px > 0 && vals.py > 0)) { toast('Width, height and pixel counts must be above zero.'); return; }
-      const np = normalizePanel(Object.assign({}, vals, { id: existing ? existing.id : uid('c-') }));
+    { label: existing ? 'Save panel' : use && s0 && s0.sizeMode !== 'mix' ? 'Add and use' : 'Add panel', cls: 'primary', run: (close) => {
+      const v = read();
+      if (!v.model.trim()) { toast('Give the panel a model name.'); return; }
+      if (!(v.w > 0 && v.h > 0 && v.px > 0 && v.py > 0)) { toast('Width, height and pixel counts must be above zero.'); return; }
+      if (existing) {
+        const np = normalizePanel(Object.assign({}, v, { id: existing.id }));
+        if (!projectOnly) Lib.upsert(np);
+        const inProject = S.project.catalog.some((c) => c.id === np.id);
+        if (inProject) change((pp) => { pp.catalog = pp.catalog.map((c) => (c.id === np.id ? deepClone(np) : c)); }, { structural: true });
+        close(); toast(`Saved ${np.name}`); if (onSaved) onSaved(np); return;
+      }
+      const id = panelIdFor(v.brand, v.model);
+      if (Lib.isOwn(id)) { toast(`You already have ${panelName(v.brand, v.model)}. Edit that one, or use another model name.`); return; }
+      const np = normalizePanel(Object.assign({}, v, { id }));
+      Lib.upsert(np);
       const s = active();
-      change((pp) => {
-        if (existing) pp.catalog = pp.catalog.map((c) => (c.id === existing.id ? np : c));
-        else { pp.catalog.push(np); if (s && s.sizeMode !== 'mix') s.panel = np.id; }
-      }, { structural: true });
-      close(); toast(existing ? 'Panel saved' : `Added ${np.name}`);
+      if (use && s && s.sizeMode !== 'mix') change(() => { s.panel = np.id; }, { structural: true });
+      close(); toast(`Added ${np.name} to your panels`); if (onSaved) onSaved(np);
     } },
   ] });
   const read = () => {
     const o = {};
     $$('[data-pk]', m.body).forEach((el) => {
       const k = el.dataset.pk;
-      if (k === 'name') { o.name = el.value; return; }
+      if (k === 'brand' || k === 'model') { o[k] = el.value.replace(/\s+/g, ' ').trim(); return; }
       const n = parseFloat(String(el.value).replace(',', '.'));
-      o[k] = Number.isFinite(n) ? (el.dataset.t === 'int' ? Math.round(n) : n) : (['kg', 'wMax', 'wAvg'].includes(k) ? null : 0);
+      o[k] = Number.isFinite(n) ? (el.dataset.t === 'int' ? Math.round(n) : n) : (['kg', 'wMax', 'wAvg', 'stock'].includes(k) ? null : 0);
     });
+    if (projectOnly && existing) o.stock = existing.stock ?? null;
     return o;
   };
   const out = () => {
     const v = read(); const el = $('#pk-out', m.body);
-    if (v.w > 0 && v.px > 0 && v.h > 0 && v.py > 0) el.innerHTML = `Pitch <b>${(v.w / v.px).toFixed(3)} mm</b> across, <b>${(v.h / v.py).toFixed(3)} mm</b> down · ${fmtInt(v.px * v.py)} px per cabinet · ${fmtNum((v.px * v.py) / (v.w * v.h / 1e6) / 1000, 1)}k px/m²`;
+    const name = panelName(v.brand, v.model);
+    if (v.w > 0 && v.px > 0 && v.h > 0 && v.py > 0) el.innerHTML = `${name ? `<b>${esc(name)}</b> · ` : ''}pitch <b>${(v.w / v.px).toFixed(3)} mm</b> across, <b>${(v.h / v.py).toFixed(3)} mm</b> down · ${fmtInt(v.px * v.py)} px per cabinet · ${fmtNum((v.px * v.py) / (v.w * v.h / 1e6) / 1000, 1)}k px/m²`;
     else el.textContent = 'Enter the cabinet size and pixel counts.';
   };
   m.body.addEventListener('input', out); out();
+}
+
+/* ---------- the "Your panels" dialog: your list, the site's panels.xlsx, import and export ---------- */
+function specLine(p) {
+  return `${fmtNum(p.w, 1)} × ${fmtNum(p.h, 1)} mm · ${p.px} × ${p.py} px · P${fmtPitch(p)}${p.kg !== null ? ` · ${fmtNum(p.kg, 1)} kg` : ''}${p.wMax !== null ? ` · ${fmtInt(p.wMax)} W` : ''}${p.stock !== null && p.stock !== undefined ? ` · stock ${fmtInt(p.stock)}` : ''}`;
+}
+function skippedHtml(list) {
+  if (!list || !list.length) return '';
+  return `<details class="more"><summary>${list.length} row${list.length === 1 ? '' : 's'} skipped</summary><div class="desc">${list.slice(0, 60).map((x) => `Row ${x.row}${x.name ? ` (${esc(x.name)})` : ''}: ${esc(x.reason)}`).join('<br>')}${list.length > 60 ? `<br>and ${list.length - 60} more` : ''}</div></details>`;
+}
+function panelListHtml(list, editable) {
+  if (!list.length) return '';
+  const groups = new Map();
+  for (const p of [...list].sort(byBrandModel)) { const b = p.brand || ''; if (!groups.has(b)) groups.set(b, []); groups.get(b).push(p); }
+  return `<div class="plist">${[...groups].map(([b, ps]) => `<div class="lib-brand">${esc(b || 'No brand')}</div>${ps.map((p) => `<div class="prow" data-pid="${esc(p.id)}"><div><div class="t">${esc(b ? p.model : p.name)}</div><div class="m mono">${specLine(p)}</div></div>${editable ? '<div class="b"><button class="btn sm" data-lib="edit">Edit</button><button class="btn sm danger" data-lib="del">Delete</button></div>' : ''}</div>`).join('')}`).join('')}</div>`;
+}
+function panelsModal() {
+  const m = openModal({ title: 'Your panels', body: '<div class="lib" id="lib"></div>', foot: [
+    { label: 'Export', run: exportPanels },
+    { label: 'Import Excel or CSV', run: () => $('#file-panels').click() },
+    { label: 'New panel', cls: 'primary', run: () => panelModal() },
+  ], onClose: () => { off(); S.libNote = ''; } });
+  const render = () => {
+    const box = $('#lib', m.body); if (!box) return;
+    const mode = Store.mode();
+    const where = mode === 'cloud' ? 'in your account, so they follow you to every device where you open this planner' : mode === 'local' ? 'in this browser' : 'only until you close the page, because this browser is blocking storage, so use Export to keep them';
+    const out = [`<div class="desc">Your panels show in every panel list, grouped by brand, in every project. Panels you add here are kept ${where}. A project keeps a copy of each panel it uses, so its project file works anywhere.</div>`];
+    if (S.libNote) out.push(`<div class="readout">${S.libNote}</div>`);
+    const site = Lib.site;
+    if (site) {
+      out.push(`<div class="lib-sec"><div class="lib-head"><h4>${esc(site.file)} on this site</h4><button class="btn sm" data-lib="reload">Read again</button></div>
+        <div class="desc">${site.error ? `<span class="warn">Could not read the file: ${esc(site.error)}</span><br>` : ''}${fmtInt(site.panels.length)} panel${site.panels.length === 1 ? '' : 's'}${site.sheet ? ` from the sheet “${esc(site.sheet)}”` : ''}, read ${relTime(site.loaded) || 'earlier'}. To change them, edit the file and upload it again.</div>
+        ${skippedHtml(site.skipped)}${panelListHtml(site.panels.filter((x) => !Lib.isOwn(x.id)), false)}</div>`);
+    } else if (/(^|\.)github\.io$/i.test(location.hostname)) {
+      out.push(`<div class="lib-sec"><h4>Panel list for everyone</h4><div class="desc">Upload an Excel file named <b>panels.xlsx</b> to this planner's GitHub repository, next to index.html. The planner reads it every time it opens, on every device. <button class="linkbtn" data-lib="reload">Check again</button></div></div>`);
+    }
+    out.push(`<div class="lib-sec"><h4>Added ${mode === 'cloud' ? 'to your account' : mode === 'local' ? 'in this browser' : 'here'}</h4>${Lib.own.length ? panelListHtml(Lib.own, true) : '<div class="empty">None yet. Use New panel, or Import an Excel or CSV file with one row per panel.</div>'}</div>`);
+    const tpl = /(^|\.)github\.io$/i.test(location.hostname) ? 'panels-template.xlsx' : 'https://juicypeachxx.github.io/Led-wall-calc/panels-template.xlsx';
+    out.push(`<div class="desc">Spreadsheet columns: Brand, Model, Width (mm), Height (mm), Pixels across, Pixels down, and if you have them Weight (kg), Max power (W), Typical power (W) and Stock. Pixel pitch can stand in for the pixel counts. <a class="linkbtn" href="${tpl}" download target="_blank" rel="noopener">Download the Excel template</a>; Export gives a CSV file with the same columns.</div>`);
+    box.innerHTML = out.join('');
+  };
+  const off = Lib.on(render);
+  m.body.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-lib]'); if (!b) return;
+    const a = b.dataset.lib, row = b.closest('[data-pid]'), p = row ? Lib.find(row.dataset.pid) : null;
+    if (a === 'edit' && p) panelModal({ existing: p });
+    if (a === 'del' && p) {
+      if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = 'Confirm delete'; setTimeout(() => { if (b.isConnected) { b.classList.remove('armed'); b.textContent = 'Delete'; } }, 4000); return; }
+      Lib.remove(p.id); toast(`Removed ${p.name} from your panels`, { label: 'Undo', run: () => Lib.upsert(p) });
+    }
+    if (a === 'reload') { b.disabled = true; await loadSitePanels({ announce: true }); render(); }
+    if (a === 'prune') {
+      const gone = Lib.own.filter((x) => S.libPrune.includes(x.id)); S.libPrune = [];
+      Lib.own = Lib.own.filter((x) => !gone.some((g) => g.id === x.id)); S.libNote = ''; Lib.saveOwn();
+      toast(`Removed ${gone.length} panel${gone.length === 1 ? '' : 's'}`, { label: 'Undo', run: () => { Lib.own.push(...gone); Lib.saveOwn(); } });
+    }
+  });
+  render();
+}
+// a spreadsheet with one row per panel -> your panels (matched by brand and model, so importing again updates them)
+async function importPanels(file) {
+  let r;
+  try { r = await Sheets.readPanels(file, file.name); }
+  catch (e) { S.libNote = `<span class="warn"><b>${esc(file.name)}</b>: ${esc(e.message || 'could not be read')}</span>`; Lib.emit(); toast(`${file.name} could not be read`); return; }
+  if (!r.header) {
+    S.libNote = `<span class="warn"><b>${esc(file.name)}</b>: no column names found.</span> The first rows need names such as Brand, Model, Width (mm), Height (mm), Pixels across and Pixels down.`;
+    Lib.emit(); toast(`No panel list found in ${file.name}`); return;
+  }
+  let added = 0, updated = 0, same = 0; const ids = new Set();
+  for (const np of r.panels) {
+    const key = panelKey(np.brand, np.model);
+    const ex = Lib.own.find((x) => x.id === np.id) || Lib.own.find((x) => panelKey(x.brand, x.model) === key);
+    if (ex) {
+      // a column the file does not have keeps the value you had; an empty cell in a column it has clears it
+      const keep = {}; for (const k of ['kg', 'wMax', 'wAvg', 'stock']) if (!r.columns.includes(k)) keep[k] = ex[k] ?? null;
+      const merged = normalizePanel(Object.assign({}, np, keep, { id: ex.id })); ids.add(ex.id);
+      if (samePanel(ex, merged) && (ex.stock ?? null) === (merged.stock ?? null)) same++; else { Object.assign(ex, merged); updated++; }
+    } else { Lib.own.push(np); ids.add(np.id); added++; }
+  }
+  const extra = Lib.own.filter((x) => !ids.has(x.id));
+  S.libPrune = extra.map((x) => x.id);
+  S.libNote = `<b>${esc(file.name)}</b>${r.sheet ? `, sheet “${esc(r.sheet)}”` : ''}: ${added} added, ${updated} updated, ${same} unchanged.${skippedHtml(r.skipped)}`
+    + (extra.length ? `<br>${extra.length} of the panels you had here ${extra.length === 1 ? 'is' : 'are'} not in this file. <button class="linkbtn" data-lib="prune">Remove ${extra.length === 1 ? 'it' : 'them'}</button>` : '');
+  if (added || updated) Lib.saveOwn(); else Lib.emit();
+  toast(`Read ${r.panels.length} panel${r.panels.length === 1 ? '' : 's'} from ${file.name}`);
+}
+async function exportPanels() {
+  const list = [...Lib.all()].sort(byBrandModel);
+  if (!list.length) { toast('There are no panels to export yet.'); return; }
+  const rows = [['Brand', 'Model', 'Width (mm)', 'Height (mm)', 'Pixels across', 'Pixels down', 'Pitch (mm)', 'Weight (kg)', 'Max power (W)', 'Typical power (W)', 'Stock']];
+  for (const p of list) rows.push([p.brand, p.model || p.name, p.w, p.h, p.px, p.py, Math.round(p.w / p.px * 1000) / 1000, p.kg, p.wMax, p.wAvg, p.stock ?? null]);
+  await Downloads.save('Your_panels.csv', new Blob([csvText(rows)], { type: 'text/csv;charset=utf-8' }));
+}
+// panels.xlsx (or panels.csv) next to the planner: everyone who opens the planner from that site gets these panels
+async function loadSitePanels({ announce = false } = {}) {
+  if (!/^https?:$/.test(location.protocol)) return;
+  for (const file of ['panels.xlsx', 'panels.csv']) {
+    let res;
+    try { res = await fetch(file, { cache: 'no-cache' }); } catch (e) { if (announce) toast('Could not reach the site. The last copy of the panel list stays in use.'); return; }
+    if (!res.ok || /text\/html/i.test(res.headers.get('content-type') || '')) continue;
+    const prev = Lib.site;
+    try {
+      const r = await Sheets.readPanels(await res.blob(), file);
+      if (!r.header) throw new Error('no column names found. The first rows need names such as Brand, Model, Width (mm), Height (mm), Pixels across and Pixels down.');
+      const changed = !prev || prev.file !== file || JSON.stringify(prev.panels) !== JSON.stringify(r.panels);
+      Lib.setSite({ file, sheet: r.sheet || '', panels: r.panels, skipped: r.skipped, loaded: new Date().toISOString() });
+      if (announce || changed) toast(`${prev && prev.file === file ? 'Updated' : 'Loaded'} ${r.panels.length} panel${r.panels.length === 1 ? '' : 's'} from ${file}`);
+    } catch (e) {
+      Lib.setSite({ file, sheet: '', panels: prev && prev.file === file ? prev.panels : [], skipped: [], error: e.message || 'unreadable', loaded: new Date().toISOString() });
+      toast(`${file} on this site could not be read`);
+    }
+    return;
+  }
+  if (Lib.site) Lib.setSite(null);
+  if (announce) toast('No panels.xlsx found on this site.');
+}
+// once: panels made in projects before there was a panel list become your panels
+function migratePanels() {
+  if (Store.flag('libmig')) return 0;
+  let n = 0;
+  for (const c of Store.localCatalogs()) {
+    let p; try { p = normalizePanel(c); } catch (e) { continue; }
+    const key = panelKey(p.brand, p.model);
+    if (Lib.find(p.id) || Lib.own.some((x) => panelKey(x.brand, x.model) === key)) continue;
+    Lib.own.push(p); n++;
+  }
+  if (n) Lib.saveOwn();
+  Store.flag('libmig', true);
+  return n;
+}
+// signed in: the account's list wins, and panels only this browser had are added to it
+async function syncCloudPanels() {
+  const cl = await Store.cloudLibrary();
+  if (!cl) { if (Lib.own.length) Store.saveLibrary(Lib.own); return; }
+  const list = cl.map((c) => { try { return normalizePanel(c); } catch (e) { return null; } }).filter(Boolean);
+  const ids = new Set(list.map((p) => p.id)), extra = Lib.own.filter((p) => !ids.has(p.id));
+  Lib.own = [...list, ...extra].sort(byBrandModel);
+  Store.saveLibrary(Lib.own, { cloud: extra.length > 0 });
+  Lib.emit();
+}
+// when the panel lists change: refresh the panel menus in the screen settings without redrawing the fields
+function onPanelsChanged() {
+  $$('#cfg select[data-bind="panel"], #cfg select[data-bind="mix.small"], #cfg select[data-bind="mix.big"]').forEach((sel) => { const v = sel.value; sel.innerHTML = panelOptions(v); sel.value = v; });
+  refreshReadouts();
 }
 
 function bigPlanModal() {
@@ -5270,18 +6003,24 @@ function start(hot) {
   let p = null;
   if (hot && hot.project) { try { p = normalizeProject(hot.project); } catch (e) { p = null; } }
   if (!p) { const lastId = Store.localLast(); p = lastId ? Store.localLoad(lastId) : null; }
+  Lib.load();
+  const migrated = migratePanels();
   const fresh = !p;
   if (fresh) p = blankProject();
   setProject(p, { fresh });
   if (hot && hot.activeId && findScreen(hot.activeId)) { S.activeId = hot.activeId; S.selection = new Set([hot.activeId]); }
   bindAll();
   renderAll();
+  Lib.on(onPanelsChanged);
+  if (migrated) toast(`${migrated} panel${migrated === 1 ? '' : 's'} from your saved projects ${migrated === 1 ? 'is' : 'are'} now in Your panels`);
+  loadSitePanels();
   View3D.init($('#view3d'));
   schedule3D(0);
   Store.onChange(updateSavePill);
   Downloads.init().then(renderExportMenu);
   Store.initCloud().then(async (ok) => {
     if (ok) {
+      await syncCloudPanels();
       const last = await Store.cloudLast();
       if (last) {
         const cp = await Store.loadCloud(last);
@@ -5304,7 +6043,7 @@ function start(hot) {
     document.fonts.ready.then(redraw);
     if (document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', redraw);
   }
-  window.__lwp = { S, change, undo, redo, recompute, renderAll, View3D, Store, runExport, buildPdfReport };
+  window.__lwp = { S, change, undo, redo, recompute, renderAll, View3D, Store, runExport, buildPdfReport, Lib, Sheets, loadSitePanels };
 }
 if (window.claude && window.claude.hot && typeof window.claude.hot.ready === 'function') window.claude.hot.ready(start);
 else start((window.claude && window.claude.hot && window.claude.hot.data) || {});

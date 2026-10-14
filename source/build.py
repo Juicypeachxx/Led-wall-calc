@@ -11,7 +11,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 SRC, VENDOR = HERE / 'src', HERE / 'vendor'
 OUT = HERE.parent / 'index.html'
 
-JS_ORDER = ['fonts.js', 'engine.js', 'pens.js', 'draw.js', 'three3d.js', 'storage.js', 'pdf.js', 'ui.js']
+JS_ORDER = ['fonts.js', 'engine.js', 'sheets.js', 'pens.js', 'draw.js', 'three3d.js', 'storage.js', 'pdf.js', 'ui.js']
 LIBS = ['three.min.js', 'OrbitControls.js', 'jspdf.umd.min.js']
 ICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%2314202C'/%3E"
         "%3Cg fill='%23F2A51E'%3E%3Crect x='5' y='5' width='4' height='4'/%3E%3Crect x='15' y='5' width='4' height='4'/%3E%3Crect x='10' y='10' width='4' height='4'/%3E"

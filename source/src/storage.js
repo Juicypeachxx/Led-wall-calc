@@ -117,12 +117,40 @@ const Store = (() => {
   }
   function localLast() { return LS.get('lwp:last'); }
 
+  /* ---- your panels: one list per viewer, offered in every project ---- */
+  const readJSON = (k, d) => { try { const v = JSON.parse(LS.get(k) || 'null'); return v === null ? d : v; } catch (e) { return d; } };
+  function localLibrary() { const a = readJSON('lwp:library', []); return Array.isArray(a) ? a : []; }
+  let libChain = Promise.resolve();
+  function saveLibrary(panels, { cloud = true } = {}) {
+    const json = JSON.stringify(panels);
+    const ok = LS.set('lwp:library', json);
+    // the account copy is one document; a very long list (over ~1,000 panels) stays in this browser only
+    if (!cloudOK || !cloud || json.length > 240000) return Promise.resolve(ok);
+    libChain = libChain.then(() => col().doc('_library').set({ kind: 'library', panels, updated: new Date().toISOString() })).then(() => true, () => false);
+    return libChain;
+  }
+  async function cloudLibrary() {
+    if (!cloudOK) return null;
+    try { const d = await col().doc('_library').get(); if (!d.exists) return null; const x = d.data() || {}; return Array.isArray(x.panels) ? x.panels : null; } catch (e) { return null; }
+  }
+  // the last panel list read from the site (panels.xlsx next to the planner), so it also works offline
+  function siteCache() { const v = readJSON('lwp:site', null); return v && Array.isArray(v.panels) ? v : null; }
+  function saveSiteCache(v) { if (v) LS.set('lwp:site', JSON.stringify(v)); else LS.del('lwp:site'); }
+  // custom panels inside the projects saved in this browser (to start the list from them once)
+  function localCatalogs() {
+    const out = [];
+    for (const x of localIndex()) { try { const r = JSON.parse(LS.get('lwp:proj:' + x.id) || 'null'); if (r && Array.isArray(r.catalog)) out.push(...r.catalog); } catch (e) { /* skip */ } }
+    return out;
+  }
+  const flag = (k, v) => (v === undefined ? LS.get('lwp:flag:' + k) === '1' : LS.set('lwp:flag:' + k, v ? '1' : '0'));
+
   return { initCloud, save, list, load, loadCloud, remove, setLast, cloudLast, localLast, localLoad, probeLocal,
+    localLibrary, saveLibrary, cloudLibrary, siteCache, saveSiteCache, localCatalogs, flag,
     mode, onChange: (f) => { listeners.add(f); f(state, mode(), lastError); }, get state() { return state; } };
 })();
 
 const Prefs = {
-  data: { theme: 'system', mode: 'pro', grid: true, labels: true, dims: true, planMode: 'data', planDims: true, planLabels: true, face: 'cabinets', person: true },
+  data: { theme: 'system', mode: 'pro', grid: true, labels: true, dims: true, planMode: 'data', planDims: true, planLabels: true, face: 'cabinets', person: true, sf: null },
   load() { try { Object.assign(this.data, JSON.parse(localStorage.getItem('lwp:prefs') || '{}')); } catch (e) { /* defaults */ } return this.data; },
   save() { try { localStorage.setItem('lwp:prefs', JSON.stringify(this.data)); } catch (e) { /* ignore */ } },
 };

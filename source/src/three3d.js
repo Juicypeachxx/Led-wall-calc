@@ -203,8 +203,8 @@ const View3D = (() => {
     return { group, dispose: () => disposables.forEach((d) => d && d.dispose && d.dispose()) };
   }
 
-  // Mounting, schematic only: flying bars with chains and hoists on top, a ground-stack base with rear
-  // braces, or a frame of posts and rails behind the cabinets (posts down to the floor).
+  // Mounting, schematic only: flying bars with chains and hoists on top, or a ground stack: ground beams on
+  // adjustable feet under the cabinets and upright posts on H-frame bases behind them.
   function addSupports(group, disposables, s, comp, facets, H, depth, colW, colors) {
     const mount = s.mount || 'ground';
     const mat = new THREE.MeshStandardMaterial({ color: colors.support, roughness: 0.65, metalness: 0.4 }); disposables.push(mat);
@@ -224,14 +224,35 @@ const View3D = (() => {
         items.push({ f: facets[i], lx: 0, ly: H + 0.66, lz: -depth / 2, sx: 0.025, sy: 1.2, sz: 0.025 });                     // chain
         items.push({ f: facets[i], lx: 0, ly: H + 1.4, lz: -depth / 2, sx: 0.2, sy: 0.28, sz: 0.2 });                         // hoist
       }
-    } else if (mount === 'ground') {
-      for (const f of facets) items.push({ f, lx: 0, ly: -0.025, lz: -0.29, sx: colW, sy: 0.05, sz: 0.62 });                  // base
-      const hTop = H * 0.75, d = Math.min(1.6, Math.max(0.6, H * 0.45)), L = Math.hypot(hTop, d);
-      for (const i of spread(2)) items.push({ f: facets[i], lx: 0, ly: hTop / 2, lz: -depth - d / 2, sx: 0.04, sy: L, sz: 0.04, rx: Math.atan2(d, hTop) });   // rear brace
     } else {
-      const floor = -(num(s.y) || 0) / 1000, zb = -depth - 0.2, m = 0.12;
-      for (const i of spread(3)) items.push({ f: facets[i], lx: 0, ly: (floor + H + 0.1) / 2, lz: zb, sx: m, sy: H + 0.1 - floor, sz: m });   // post
-      for (const f of facets) for (const y of (H > 0.8 ? [0.25, H - 0.25] : [H / 2])) items.push({ f, lx: 0, ly: y, lz: zb, sx: colW, sy: m * 0.7, sz: m * 0.7 });   // rails
+      // ground stack (see groundSupports in the engine): a ground beam under each cabinet column on two
+      // adjustable feet, just below the bottom edge; behind the screen, upright posts on H-shaped floor frames
+      // with four levelling feet, ladder frames at both ends. No diagonal braces.
+      const floor = -(num(s.y) || 0) / 1000;                          // the floor, in the screen's own height
+      const foot = (f, lx, y0, z) => {                                 // levelling foot: plate on the floor, spindle above
+        items.push({ f, lx, ly: y0 + 0.008, lz: z, sx: 0.1, sy: 0.016, sz: 0.1 });
+        items.push({ f, lx, ly: y0 + 0.045, lz: z, sx: 0.03, sy: 0.06, sz: 0.03 });
+      };
+      for (let k = 0; k < C; k++) {                                     // ground beams, one per column
+        items.push({ f: facets[k], lx: 0, ly: -0.04, lz: -depth / 2, sx: colW - 0.012, sy: 0.08, sz: 0.09 });
+        for (const lx of [-colW / 2 + 0.07, colW / 2 - 0.07]) foot(facets[k], lx, -0.15, -depth / 2);
+      }
+      const len = Math.min(1.6, Math.max(0.9, H * 0.35)), gap = 0.44, top = H + 0.25, baseY = floor + 0.075;
+      const pos = groundSupports(comp.W).map((u) => u / 1000);
+      pos.forEach((u, i) => {
+        const k = Math.min(C - 1, Math.max(0, Math.floor(u / colW))), f = facets[k], lx = u - (k + 0.5) * colW;
+        const z0 = -depth - 0.06, z1 = z0 - len, end = i === 0 || i === pos.length - 1;
+        for (const dx of [-gap / 2, gap / 2]) items.push({ f, lx: lx + dx, ly: baseY + 0.03, lz: (z0 + z1) / 2, sx: 0.06, sy: 0.06, sz: len });   // H frame: two rails
+        for (const z of [z0 - 0.08, (z0 + z1) / 2, z1 + 0.08]) items.push({ f, lx, ly: baseY + 0.03, lz: z, sx: gap, sy: 0.05, sz: 0.05 });       // and the cross bars
+        for (const dx of [-gap / 2, gap / 2]) for (const z of [z0 - 0.05, z1 + 0.05]) foot(f, lx + dx, floor, z);
+        const postH = top - (baseY + 0.06), zp = z0 - 0.06;
+        items.push({ f, lx, ly: baseY + 0.06 + postH / 2, lz: zp, sx: 0.07, sy: postH, sz: 0.07 });                                             // upright post
+        if (end) {                                                       // at the ends a ladder frame: second upright and rungs
+          const zb = zp - 0.5, rungs = Math.max(2, Math.floor(postH / 0.6));
+          items.push({ f, lx, ly: baseY + 0.06 + postH / 2, lz: zb, sx: 0.06, sy: postH, sz: 0.06 });
+          for (let r = 1; r <= rungs; r++) items.push({ f, lx, ly: baseY + 0.06 + postH * r / (rungs + 1), lz: (zp + zb) / 2, sx: 0.04, sy: 0.04, sz: 0.5 });
+        }
+      });
     }
     if (!items.length) return;
     const geo = new THREE.BoxGeometry(1, 1, 1); disposables.push(geo);
@@ -247,7 +268,7 @@ const View3D = (() => {
   function contentKey(project, s, face) {
     const used = [s.panel, s.mix && s.mix.small, s.mix && s.mix.big].map((id) => { const p = getPanel(project, id); return [p.id, p.w, p.h, p.px, p.py, p.wMax, p.wAvg]; });
     const st = project.settings;
-    return JSON.stringify([s.name, s.color, s.sizeMode, s.panel, s.cols, s.rows, s.tw, s.th, s.fit, s.mix, s.shape, s.angle, s.holes, s.data, s.mount, s.mount === 'back' ? s.y : 0, face, used,
+    return JSON.stringify([s.name, s.color, s.sizeMode, s.panel, s.cols, s.rows, s.tw, s.th, s.fit, s.mix, s.shape, s.angle, s.holes, s.data, s.mount, s.mount === 'ground' ? Math.round(num(s.y) || 0) : 0, face, used,
       face === 'data' ? [st.portCapacity, st.portPrefix] : 0, face === 'power' ? [st.voltage, st.circuitAmps, st.loadFactor, st.powerFactor, st.powerBasis] : 0]);
   }
 

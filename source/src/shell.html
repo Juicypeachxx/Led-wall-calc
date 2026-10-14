@@ -52,7 +52,7 @@
       <button class="btn" id="btn-new" title="Start a new project"><svg class="ico"><use href="#i-new"/></svg><span class="lbl-txt">New</span></button>
       <button class="btn" id="btn-open" title="Open a saved project"><svg class="ico"><use href="#i-open"/></svg><span class="lbl-txt">Open</span></button>
       <button class="btn" id="btn-dup" title="Save a copy of this project"><svg class="ico"><use href="#i-copy"/></svg><span class="lbl-txt">Duplicate</span></button>
-      <button class="btn" id="btn-import" title="Open a project file (.json)"><svg class="ico"><use href="#i-import"/></svg><span class="lbl-txt">Import</span></button>
+      <button class="btn" id="btn-import" title="Open a project file (.json), or read a panel list (.xlsx, .csv)"><svg class="ico"><use href="#i-import"/></svg><span class="lbl-txt">Import</span></button>
       <div class="menu-wrap">
         <button class="btn primary" id="btn-export" aria-haspopup="true" aria-expanded="false"><svg class="ico"><use href="#i-export"/></svg>Export<svg class="ico"><use href="#i-caret"/></svg></button>
         <div class="menu" id="export-menu" hidden></div>
@@ -95,14 +95,16 @@
       <div class="stage-wrap" id="stage-wrap"><svg id="stage-svg" role="img" aria-label="Stage layout, front view"></svg>
         <div class="stage-empty" id="stage-empty" hidden>
           <div class="stage-empty-card">
-            <b>No screens yet</b>
-            <span>Pick the first screen to add. Its size, cabinets and position can all be changed afterwards.</span>
-            <div class="chips" id="empty-kinds"></div>
-            <button class="linkbtn" id="btn-example">Or open the example project</button>
+            <div class="se-head"><b>No screens yet</b><span>Start with a screen type, or enter the size you need with your own panel. Everything can be changed afterwards.</span></div>
+            <div class="se-cols">
+              <div class="se-col"><div class="se-h">Screen type</div><div class="chips" id="empty-kinds"></div></div>
+              <form class="se-col se-form" id="start-form" novalidate><div class="se-h">Your own size</div><div id="start-fields"></div><button type="submit" class="btn primary" id="sf-add">Add screen</button></form>
+            </div>
+            <button type="button" class="linkbtn" id="btn-example">Or open the example project</button>
           </div>
         </div>
       </div>
-      <div class="card-foot">Drag a screen to move it. Shift-click selects several. Scroll or pinch to zoom, drag empty space to pan. Hold Alt while dragging to skip snapping. Screens are drawn flat (developed); yaw, depth and curves show in the 3D view. A bar with chains on top marks a flown screen, a bar underneath a ground stack, a dashed frame a back construction.</div>
+      <div class="card-foot">Drag a screen to move it. Shift-click selects several. Scroll or pinch to zoom, drag empty space to pan. Hold Alt while dragging to skip snapping. Screens are drawn flat (developed); yaw, depth and curves show in the 3D view. A bar with chains on top marks a flown screen, ground beams with feet underneath a ground stack.</div>
     </div>
     <div class="card">
       <div class="card-head">
@@ -154,4 +156,5 @@
 </div>
 <div id="modal-root"></div>
 <div id="toasts" class="toasts" aria-live="polite"></div>
-<input type="file" id="file-import" accept=".json,application/json" hidden>
+<input type="file" id="file-import" accept=".json,application/json,.xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>
+<input type="file" id="file-panels" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain" hidden>

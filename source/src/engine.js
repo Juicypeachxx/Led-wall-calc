@@ -69,14 +69,21 @@ const KINDS = {
 
 /* ---------- how a screen is held up ----------
    The mounting sets the build order: a flown screen is hung from the top row down (the top row goes on
-   the flying bars, the hoists lift, the next row goes underneath); a ground stack and a screen fixed to a
-   back construction are built from the bottom row up. */
+   the flying bars, the hoists lift, the next row goes underneath); a ground stack stands on base beams
+   with outriggers and is built from the bottom row up. */
 const MOUNTS = {
   flown: { label: 'Flown', long: 'Flown (hung from flying bars)' },
-  ground: { label: 'Ground stack', long: 'Ground stack (standing on a base)' },
-  back: { label: 'Back construction', long: 'Back construction (fixed to a truss or scaffold frame)' },
+  ground: { label: 'Ground stack', long: 'Ground stack (on ground beams, with rear supports)' },
 };
-const MOUNT_ORDER = ['flown', 'ground', 'back'];
+const MOUNT_ORDER = ['flown', 'ground'];
+// A ground stack as built with portable ground-stack systems: the cabinets stand on ground beams, one per
+// cabinet column, each on two adjustable feet; behind the screen an upright support post stands on an
+// H-shaped floor frame with levelling feet, at both ends (ladder frames there) and about every 2 m between.
+// Returns where the supports go, in mm along the (developed) screen width.
+function groundSupports(W) {
+  const n = Math.max(2, Math.round(W / 2000) + 1), edge = Math.min(100, W / 4);
+  return Array.from({ length: n }, (_, i) => edge + (W - 2 * edge) * i / (n - 1));
+}
 function buildOrderText(mount) {
   return mount === 'flown'
     ? 'top row first, left to right, then each row below (a flown screen is hung from the top down)'
@@ -188,8 +195,9 @@ function normalizeProject(raw) {
     s.mix = Object.assign(defaultScreen().mix, s.mix || {});
     s.mix.w = clamp(num(s.mix.w, 4), 0.1, 200); s.mix.h = clamp(num(s.mix.h, 2.5), 0.1, 100); s.mix.stock = clamp(int(s.mix.stock, 0), 0, 100000);
     s.shape = ['flat', 'concave', 'convex'].includes(s.shape) ? s.shape : 'flat';
-    // projects saved before the mounting option: a screen standing on the floor is a ground stack, one higher up is flown
-    s.mount = MOUNTS[rs.mount] ? rs.mount : (s.y > 0 ? 'flown' : 'ground');
+    // projects saved before the mounting option: a screen standing on the floor is a ground stack, one higher up is flown;
+    // the back construction option was dropped, and such a screen, built from the bottom up, becomes a ground stack
+    s.mount = rs.mount === 'back' ? 'ground' : MOUNTS[rs.mount] ? rs.mount : (s.y > 0 ? 'flown' : 'ground');
     s.angle = clamp(num(s.angle, 5), 0.5, 45);
     s.holes = Array.isArray(s.holes) ? s.holes.filter((k) => typeof k === 'string' && /^\d+,\d+$/.test(k)).slice(0, 20000) : [];
     s.data = Object.assign({ dir: 'h', start: 'bl', path: 'snake', split: 'lines' }, s.data || {});
@@ -210,13 +218,129 @@ function normalizeProject(raw) {
 
 function normalizePanel(c) {
   const opt = (v) => (v === '' || v === null || v === undefined || !Number.isFinite(num(v, NaN)) ? null : Math.max(0, num(v)));
+  const clean = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const brand = clean(c.brand, 40);
+  let model = clean(c.model, 80);
+  if (!model) {
+    // panels saved before brand and model existed keep their whole name as the model
+    let n = clean(c.name, 121);
+    if (brand && n.toLowerCase().startsWith(brand.toLowerCase() + ' ')) n = n.slice(brand.length + 1);
+    model = n.slice(0, 80);
+  }
+  if (!brand && !model) model = 'Custom panel';
+  const stock = opt(c.stock);
   return {
     id: typeof c.id === 'string' && c.id ? c.id.slice(0, 40) : uid('c-'),
-    name: String(c.name || 'Custom panel').slice(0, 80),
+    brand, model, name: panelName(brand, model),
     w: clamp(num(c.w, 500), 10, 5000), h: clamp(num(c.h, 500), 10, 5000),
     px: clamp(int(c.px, 128), 1, 8192), py: clamp(int(c.py, 128), 1, 8192),
-    kg: opt(c.kg), wMax: opt(c.wMax), wAvg: opt(c.wAvg), builtin: false,
+    kg: opt(c.kg), wMax: opt(c.wMax), wAvg: opt(c.wAvg), stock: stock === null ? null : Math.min(1e6, Math.round(stock)), builtin: false,
   };
+}
+
+/* ---------- your own panels: brand + model ---------- */
+// "Absen" + "PL2.5 Pro" -> "Absen PL2.5 Pro"; a model that already starts with the brand does not repeat it
+function panelName(brand, model) {
+  const b = String(brand || '').trim(), m = String(model || '').trim();
+  if (!b) return m;
+  if (!m) return b;
+  return m.toLowerCase().startsWith(b.toLowerCase()) ? m : `${b} ${m}`;
+}
+// brand + model ignoring case, accents, spacing and punctuation: "ROE Visual" + "BP2-V2" -> "roe visual bp2 v2"
+function panelKey(brand, model) {
+  return panelName(brand, model).normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+// the same brand and model always give the same id, so a panel read again from a spreadsheet
+// is still the same panel in saved projects
+function panelIdFor(brand, model) {
+  const k = panelKey(brand, model);
+  let a = 2166136261, b = 5381;
+  for (let i = 0; i < k.length; i++) { const c = k.charCodeAt(i); a = Math.imul(a ^ c, 16777619); b = Math.imul(b, 33) ^ c; }
+  return 'x-' + (a >>> 0).toString(36) + (b >>> 0).toString(36);
+}
+// same cabinet data (stock is left out: it belongs to the panel list, not to a project)
+function samePanel(a, b) {
+  return !!a && !!b && ['brand', 'model', 'w', 'h', 'px', 'py', 'kg', 'wMax', 'wAvg'].every((k) => (a[k] ?? null) === (b[k] ?? null));
+}
+
+/* ---------- panel lists from a spreadsheet ----------
+   One row per panel under a row of column names. The names are matched loosely (English plus a few
+   Slovenian ones) and units in them such as "(mm)" are ignored. A panel needs a model (or a brand),
+   its cabinet size in millimetres and its pixels (or the pixel pitch); weight, power and stock are optional. */
+function sheetField(raw) {
+  const s = ` ${String(raw ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+  const t = s.trim();
+  if (!t) return null;
+  const has = (re) => re.test(s);
+  if (has(/ (brand|manufacturer|make|maker|vendor|znamka|proizvajalec) /)) return 'brand';
+  if (has(/ (notes?|comments?|remarks?|opombe?) /)) return 'note';
+  if (has(/ (pitch|korak) /)) return 'pitch';
+  if (has(/ (pixels?|px|pix|res|resolution|piksl\w*|locljivost\w*) /)) {
+    const across = has(/ (across|wide|width|horizontal|horiz|x|w|vodoravn\w*|sirin\w*) /), down = has(/ (down|high|height|vertical|vert|y|h|navpicn\w*|visin\w*) /);
+    return across && !down ? 'px' : down && !across ? 'py' : 'res';
+  }
+  if (has(/ (stock|qty|quantity|on hand|count|pcs|units|zaloga|kolicina|stevilo|kosov) /)) return 'stock';
+  if (has(/ (typical|typ|avg|average|nominal|tipicn\w*|povprecn\w*) /)) return 'wAvg';
+  if (has(/ (power|watts?|consumption|moc|poraba) /) || /^(max|max w|w max|max kw)$/.test(t)) return 'wMax';
+  if (has(/ (weight|mass|teza|masa) /) || t === 'kg') return 'kg';
+  if (has(/ (size|dimensions?|velikost|dimenzij\w*) /)) return 'size';
+  if (has(/ (width|sirina) /) || t === 'w' || t === 'w mm') return 'w';
+  if (has(/ (height|visina) /) || t === 'h' || t === 'h mm') return 'h';
+  if (has(/ (model|name|product|panel|cabinet|naziv|ime|izdelek|oznaka) /)) return 'model';
+  return null;
+}
+// a number as typed in a sheet: "8,5", "8.5", "1.200" or "1,200" (thousands), "180 W", "P2.6", "1,2 kW"
+// prefer: the file's decimal mark when a value could be read both ways ("1,200")
+function sheetNum(v, prefer = '.') {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  if (typeof v !== 'string') return NaN;
+  let t = v.replace(/[\s  '’]/g, '').replace(/^p(?=\d)/i, '');
+  const unit = /[a-z²%]+\.?$/i.exec(t); if (unit) t = t.slice(0, unit.index);
+  if (!/^-?\d[\d.,]*$/.test(t)) return NaN;
+  const dot = t.includes('.'), com = t.includes(',');
+  if (dot && com) t = t.lastIndexOf(',') > t.lastIndexOf('.') ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+  else if (com) t = (prefer === '.' && /^-?\d{1,3}(,\d{3})+$/.test(t)) || t.split(',').length > 2 ? t.replace(/,/g, '') : t.replace(',', '.');
+  else if (dot && ((prefer === ',' && /^-?\d{1,3}(\.\d{3})+$/.test(t)) || t.split('.').length > 2)) t = t.replace(/\./g, '');
+  const x = Number(t);
+  return Number.isFinite(x) ? x * (unit && /^kw$/i.test(unit[0]) ? 1000 : 1) : NaN;
+}
+function panelsFromTable(rows, prefer = '.') {
+  const text = (v) => (v === null || v === undefined ? '' : String(v)).replace(/\s+/g, ' ').trim();
+  // the column names may sit below a title: use the first row that names a model (or brand) and a size
+  let head = null;
+  for (let r = 0; r < Math.min(rows.length, 12) && !head; r++) {
+    const map = {};
+    (rows[r] || []).forEach((v, i) => { const f = typeof v === 'string' ? sheetField(v) : null; if (f && !(f in map)) map[f] = i; });
+    if (('model' in map || 'brand' in map) && (('w' in map && 'h' in map) || 'size' in map)) head = { row: r, map };
+  }
+  if (!head) return { panels: [], skipped: [], header: false, columns: [] };
+  const m = head.map, cell = (row, f) => (f in m ? row[m[f]] : null), n = (v) => sheetNum(v, prefer);
+  const pair = (v) => { const r = /^([\d.,]+)\s*(?:mm|px)?\s*x\s*([\d.,]+)/i.exec(text(v).replace(/[×✕*]/g, 'x')); return r ? [n(r[1]), n(r[2])] : [NaN, NaN]; };
+  const opt = (v) => { const x = n(v); return x >= 0 ? x : null; };
+  const panels = [], skipped = [], seen = new Map();
+  for (let r = head.row + 1; r < rows.length && panels.length < 2000; r++) {
+    const row = rows[r] || [];
+    if (!row.some((v) => text(v) !== '')) continue;
+    const line = r + 1, brand = text(cell(row, 'brand')).slice(0, 40), model = text(cell(row, 'model')).slice(0, 80);
+    if (!brand && !model) { skipped.push({ row: line, name: '', reason: 'no brand or model' }); continue; }
+    const name = panelName(brand, model);
+    let w = n(cell(row, 'w')), h = n(cell(row, 'h'));
+    if (!(w > 0 && h > 0) && 'size' in m) [w, h] = pair(cell(row, 'size'));
+    let px = n(cell(row, 'px')), py = n(cell(row, 'py'));
+    if (!(px > 0 && py > 0) && 'res' in m) [px, py] = pair(cell(row, 'res'));
+    // from the pitch, with square pixels: the rounded pitch (2.6 for 2.604) would otherwise give 385 instead of 384 down a 1 m cabinet
+    if (!(px > 0 && py > 0) && w > 0 && h > 0) { const p = n(cell(row, 'pitch')); if (p > 0) { px = Math.round(w / p); py = h * px / w; } }
+    if (!(w > 0 && h > 0)) { skipped.push({ row: line, name, reason: 'no cabinet width and height' }); continue; }
+    if (w < 10 || h < 10 || w > 5000 || h > 5000) { skipped.push({ row: line, name, reason: 'cabinet width and height should be in millimetres' }); continue; }
+    if (!(px >= 0.5 && py >= 0.5)) { skipped.push({ row: line, name, reason: 'no pixels across and down (or pixel pitch)' }); continue; }
+    if (px > 8192 || py > 8192) { skipped.push({ row: line, name, reason: 'more than 8,192 pixels across or down' }); continue; }
+    const id = panelIdFor(brand, model);
+    if (seen.has(id)) { skipped.push({ row: line, name, reason: `same brand and model as row ${seen.get(id)}` }); continue; }
+    seen.set(id, line);
+    panels.push(normalizePanel({ id, brand, model, w, h, px: Math.round(px), py: Math.round(py),
+      kg: opt(cell(row, 'kg')), wMax: opt(cell(row, 'wMax')), wAvg: opt(cell(row, 'wAvg')), stock: opt(cell(row, 'stock')) }));
+  }
+  return { panels, skipped, header: true, columns: Object.keys(m) };
 }
 
 /* ---------- formatting ---------- */
@@ -366,7 +490,7 @@ function computeScreen(project, s) {
   const active = cells.filter((c) => c.active);
 
   // build order numbers, row by row and left to right: from the top row down for a flown screen,
-  // from the bottom row up for a ground stack or a back construction (see MOUNTS)
+  // from the bottom row up for a ground stack (see MOUNTS)
   { let n = 0; const rowsInOrder = [...Array(R).keys()]; if (s.mount === 'flown') rowsInOrder.reverse();
     for (const r of rowsInOrder) for (let c = 0; c < cols; c++) { const cell = grid[r][c]; if (cell.active) cell.build = ++n; } }
 
@@ -585,8 +709,16 @@ function packingList(project, comps, plan) {
     if (parts.length) items.push({ group, item, qty: sum(parts, (x) => x.n), unit: 'm', parts, note });
   };
   metres('Rigging', 'Flying bars along the top edge', byMount('flown'), 'hanging points and hoists per the rigging plan');
-  metres('Rigging', 'Ground-stack base along the bottom edge', byMount('ground'), 'plus rear braces or outriggers as the cabinet system requires');
-  metres('Rigging', 'Back construction (truss or scaffold) behind the screen', byMount('back'), 'as designed by the structural engineer', true);
+  // ground stacks: a ground beam under every cabinet column (as wide as the cabinet), and the rear supports
+  const grounds = byMount('ground'), widths = [...new Set(grounds.map(({ c }) => c.colW))].sort((a, b) => a - b);
+  for (const w of widths) {
+    const sel = grounds.filter(({ c }) => c.colW === w), parts = sel.map(({ s, c }) => ({ name: s.name, n: c.cols }));
+    items.push({ group: 'Rigging', item: `Ground beam ${+w.toFixed(1)} mm with 2 adjustable feet (one per cabinet column)`, qty: sum(parts, (x) => x.n), parts, note: 'the cabinets stand on these' });
+  }
+  if (grounds.length) {
+    const parts = grounds.map(({ s, c }) => ({ name: s.name, n: groundSupports(c.W).length, label: `${groundSupports(c.W).length} for ${fmtNum(c.H / 1000, 2)} m high` }));
+    items.push({ group: 'Rigging', item: 'Rear support: upright post on an H-frame base with levelling feet', qty: sum(parts, (x) => x.n), parts, note: 'at both ends and about every 2 m; number and post height as the ground-stack system requires' });
+  }
   // power
   if (list.length && list.every(({ c }) => c.power)) {
     add('Power', `Power feed cable, one per ${fmtInt(st.circuitAmps)} A circuit`, per((c) => c.power.circuits.length), 'length to suit the distribution');
@@ -659,5 +791,6 @@ function uniqueName(project, base) {
 if (typeof module !== 'undefined') {
   module.exports = { BUILTIN_PANELS, KINDS, CONTROLLERS, computeScreen, computeTotals, suggest169, exampleProject, blankProject, normalizeProject,
     ratioInfo, splitLines, orderLines, facetTransforms, colLetter, slug, fmtInt, fmtM, fmtSize, getPanel, defaultScreen, placeNewScreen, holesInGrid, defaultSettings,
-    planControllers, assignControllers, packingList, chainLinks, MOUNTS, MOUNT_ORDER, buildOrderText, packQty, packPart };
+    planControllers, assignControllers, packingList, chainLinks, MOUNTS, MOUNT_ORDER, buildOrderText, packQty, packPart,
+    normalizePanel, panelName, panelKey, panelIdFor, samePanel, sheetField, sheetNum, panelsFromTable, findPanel, KIND_ORDER, groundSupports };
 }
